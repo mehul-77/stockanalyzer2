@@ -29,7 +29,7 @@ def fetch_stock_data(stock_ticker, start_date, end_date):
         stock_data = stock_data.reset_index()
         stock_data['Date'] = stock_data['Date'].astype(str)
         return stock_data
-    except:
+    except Exception as e:
         return None
 
 # Function to fetch current stock info
@@ -38,7 +38,7 @@ def fetch_current_stock_info(stock_ticker):
     try:
         stock_info = yf.Ticker(stock_ticker).info
         return stock_info if "regularMarketPrice" in stock_info else None
-    except:
+    except Exception as e:
         return None
 
 # Function to fetch news
@@ -48,7 +48,7 @@ def fetch_news(stock_ticker):
         rss_url = f"https://news.google.com/rss/search?q={stock_ticker}+stock&hl=en-IN&gl=IN&ceid=IN:en"
         feed = feedparser.parse(rss_url)
         return [entry.title for entry in feed.entries[:5]]
-    except:
+    except Exception as e:
         return []
 
 # Perform sentiment analysis
@@ -70,13 +70,14 @@ elif page == "Stock Analysis":
     st.title("📊 Stock Analysis")
     stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upper()
     date = st.date_input("Select Date for Analysis:", datetime.today())
+
     if stock_ticker:
         start_date = (date - timedelta(days=30)).strftime('%Y-%m-%d')
         end_date = date.strftime('%Y-%m-%d')
-        
+
         stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
         stock_info = fetch_current_stock_info(stock_ticker)
-        
+
         if stock_data is None:
             st.error("❌ Stock data unavailable! Please check the ticker symbol.")
         else:
@@ -88,7 +89,7 @@ elif page == "Stock Analysis":
             plt.ylabel("Closing Price (USD)")
             plt.title(f"{stock_ticker} Closing Prices")
             st.pyplot(fig)
-        
+
         if stock_info:
             st.subheader("📈 Current Stock Information")
             st.write(f"**Current Price:** ${stock_info['regularMarketPrice']}")
@@ -100,12 +101,13 @@ elif page == "Stock Analysis":
 elif page == "News & Sentiment":
     st.title("📰 Stock Market News & Sentiment")
     stock_ticker = st.text_input("Enter Stock Ticker for News Analysis:").upper()
+
     if stock_ticker:
         news = fetch_news(stock_ticker)
         st.subheader("📰 Latest News")
         for article in news:
             st.write(f"- {article}")
-        
+
         sentiments = analyze_sentiment(news)
         if sentiments:
             st.subheader("📊 Sentiment Analysis")
