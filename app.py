@@ -25,18 +25,23 @@ sentiment_pipeline = load_sentiment_model()
 MODEL_PATH = "random_forest_model.pkl"
 
 @st.cache_resource(show_spinner=False)
+
 def load_prediction_model(model_path):
     try:
         if os.path.exists(model_path):
-            return joblib.load(model_path)
+            model = joblib.load(model_path)
+            st.success("✅ Prediction model loaded successfully!")
+            return model
         else:
-            st.warning(f"Prediction model file not found at: {model_path}")
+            st.warning(f"⚠️ Prediction model file not found at: {model_path}")
             return None
     except Exception as e:
-        st.error(f"Error loading prediction model: {e}")
+        st.error(f"❌ Error loading prediction model: {e}")
         return None
 
+MODEL_PATH = "/mnt/data/random_forest_model.pkl"
 prediction_model = load_prediction_model(MODEL_PATH)
+
 
 # Fetch Stock Data
 @st.cache_data(show_spinner=False)
