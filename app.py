@@ -33,7 +33,7 @@ def load_prediction_model(model_path):
         st.error(f"Error loading prediction model: {e}")
         return None
 
-MODEL_PATH = "random_forest_model.pkl"  # **REPLACE** with the correct relative path
+MODEL_PATH = "random_forest_model.pkl"  # **REPLACE** with your actual path!
 prediction_model = load_prediction_model(MODEL_PATH)
 
 @st.cache_data
