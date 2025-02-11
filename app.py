@@ -22,7 +22,7 @@ def load_sentiment_model():
 sentiment_pipeline = load_sentiment_model()
 
 # Load Prediction Model
-MODEL_PATH = "/mnt/data/random_forest_model.pkl"
+MODEL_PATH = "random_forest_model.pkl"
 
 @st.cache_resource(show_spinner=False)
 def load_prediction_model(model_path):
