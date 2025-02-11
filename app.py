@@ -149,18 +149,26 @@ if stock_ticker:
             st.write(f"Sentiment: {sentiments[i]['label']} (Score: {sentiments[i]['score']:.2f})")
             st.write("---")
 
-    if prediction_model and stock_data is not None and len(stock_data) >= 30:
-        try:
-            last_30_days_data = stock_data['Close'].values[-30:]
-            input_data = last_30_days_data.reshape(1, -1)
-            prediction = prediction_model.predict(input_data)[0]
-            st.subheader("🔮 Stock Price Prediction")
-            st.write(f"Predicted Closing Price: ${prediction:.2f}")
-            
-            buy_percentage, sell_percentage, hold_percentage = get_recommendation(sentiments, prediction, stock_info['current_price'])
-            st.subheader("📊 Recommendation")
+if prediction_model and stock_data is not None and len(stock_data) >= 30:
+    try:
+        last_30_days_data = stock_data['Close'].values[-30:]
+        st.write("🔍 **Last 30 Days Data:**", last_30_days_data)  # Debugging step
+        
+        input_data = last_30_days_data.reshape(1, -1)
+        prediction = prediction_model.predict(input_data)[0]
+
+        st.subheader("🔮 Stock Price Prediction")
+        st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
+
+        if stock_info and "current_price" in stock_info:
+            buy_percentage, sell_percentage, hold_percentage = get_recommendation(sentiments, prediction, stock_info["current_price"])
+
+            st.subheader("📊 Investment Recommendation")
             st.write(f"✅ **Buy Probability:** {buy_percentage:.2f}%")
             st.write(f"❌ **Sell Probability:** {sell_percentage:.2f}%")
             st.write(f"🤝 **Hold Probability:** {hold_percentage:.2f}%")
-        except Exception as e:
-            st.error(f"Error during prediction: {e}")
+        else:
+            st.error("❌ Stock price data unavailable. Unable to generate recommendations.")
+
+    except Exception as e:
+        st.error(f"❌ Error during prediction: {e}")
