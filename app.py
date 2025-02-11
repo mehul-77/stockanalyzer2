@@ -1,4 +1,4 @@
-import streamlit as st
+\import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -24,16 +24,15 @@ sentiment_pipeline = load_sentiment_model()
 def load_prediction_model(model_path):
     try:
         if os.path.exists(model_path):
-            model = joblib.load(model_path)
-            return model
+            return joblib.load(model_path)
         else:
-            st.error(f"Model file not found at: {model_path}")
+            st.warning(f"Prediction model file not found at: {model_path}")
             return None
     except Exception as e:
         st.error(f"Error loading prediction model: {e}")
         return None
 
-MODEL_PATH = "random_forest_model.pkl"  # **REPLACE** with your actual path!
+MODEL_PATH = "random_forest_model.pkl"
 prediction_model = load_prediction_model(MODEL_PATH)
 
 @st.cache_data
@@ -103,7 +102,7 @@ if stock_ticker:
     col1, col2 = st.columns(2)
 
     with col1:
-        if stock_data is not None:
+        if stock_data is not None and not stock_data.empty:
             st.subheader("📈 Stock Price Trend")
             fig, ax = plt.subplots()
             ax.plot(stock_data['Date'], stock_data['Close'], marker='o', linestyle='-')
@@ -115,13 +114,13 @@ if stock_ticker:
 
             st.subheader("📈 Current Stock Information")
             if stock_info:
-                st.write(f"**Current Price:** ${stock_info['current_price']}")
+                st.write(f"**Current Price:** ${stock_info['current_price']:.2f}")
                 if stock_info['previous_close']:
-                    st.write(f"**Previous Close:** ${stock_info['previous_close']}")
-                st.write(f"**Open:** ${stock_info['open']}")
-                st.write(f"**Day High:** ${stock_info['day_high']}")
-                st.write(f"**Day Low:** ${stock_info['day_low']}")
-                st.write(f"**Volume:** {stock_info['volume']}")
+                    st.write(f"**Previous Close:** ${stock_info['previous_close']:.2f}")
+                st.write(f"**Open:** ${stock_info['open']:.2f}")
+                st.write(f"**Day High:** ${stock_info['day_high']:.2f}")
+                st.write(f"**Day Low:** ${stock_info['day_low']:.2f}")
+                st.write(f"**Volume:** {int(stock_info['volume']):,}")
             else:
                 st.error("❌ No market data found for this stock.")
         else:
@@ -141,20 +140,16 @@ if stock_ticker:
         else:
             st.write("No news available.")
 
-        if prediction_model and stock_data is not None:
+        if prediction_model and stock_data is not None and len(stock_data) >= 30:
             try:
                 last_30_days_data = stock_data['Close'].values[-30:]
-                if len(last_30_days_data) < 30:
-                    st.warning("Not enough data for prediction. Need at least 30 days.")
-                else:
-                    input_data = last_30_days_data.reshape(1, -1)
-                    prediction = prediction_model.predict(input_data)[0]
-                    st.subheader("🔮 Stock Price Prediction")
-                    st.write(f"Predicted Value: {prediction}")
+                input_data = last_30_days_data.reshape(1, -1)
+                prediction = prediction_model.predict(input_data)[0]
+                st.subheader("🔮 Stock Price Prediction")
+                st.write(f"Predicted Closing Price: ${prediction:.2f}")
             except Exception as e:
                 st.error(f"Error during prediction: {e}")
         elif prediction_model is None:
             st.warning("Prediction model not loaded. Check the file path.")
-
 else:
     st.write("Please enter a stock ticker to begin.")
