@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import feedparser
 from transformers import pipeline
 from datetime import datetime, timedelta
+from PIL import Image
+import requests
+from io import BytesIO
 
 # Ensure page configuration is set first
 st.set_page_config(page_title="Stock Analyzer", layout="wide")
@@ -57,6 +60,15 @@ def analyze_sentiment(news_articles):
         return sentiment_pipeline(news_articles)
     return []
 
+# Function to fetch stock live images
+def fetch_stock_image(stock_ticker):
+    try:
+        url = f"https://source.unsplash.com/600x300/?{stock_ticker},stock,finance"
+        response = requests.get(url)
+        return Image.open(BytesIO(response.content))
+    except:
+        return None
+
 # Streamlit UI with Multiple Pages
 st.sidebar.title("📊 Stock Market Dashboard")
 page = st.sidebar.radio("Navigation", ["Home", "Stock Analysis", "News & Sentiment", "About"])
@@ -77,10 +89,12 @@ elif page == "Stock Analysis":
 
         stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
         stock_info = fetch_current_stock_info(stock_ticker)
+        stock_image = fetch_stock_image(stock_ticker)
 
-        if stock_data is None:
-            st.error("❌ Stock data unavailable! Please check the ticker symbol.")
-        else:
+        if stock_image:
+            st.image(stock_image, caption=f"Live Image of {stock_ticker}")
+        
+        if stock_data is not None:
             st.subheader("📈 Stock Price Trend")
             fig, ax = plt.subplots()
             ax.plot(stock_data['Date'], stock_data['Close'], marker='o', linestyle='-')
@@ -89,6 +103,8 @@ elif page == "Stock Analysis":
             plt.ylabel("Closing Price (USD)")
             plt.title(f"{stock_ticker} Closing Prices")
             st.pyplot(fig)
+        else:
+            st.error("❌ No stock data available! Please check the ticker symbol.")
 
         if stock_info:
             st.subheader("📈 Current Stock Information")
