@@ -11,7 +11,8 @@ import os
 
 st.set_page_config(page_title="Stock Analyzer", layout="wide")
 
-@st.cache_resource
+# Load Sentiment Analysis Model
+@st.cache_resource(show_spinner=False)
 def load_sentiment_model():
     from transformers import AutoTokenizer, AutoModelForSequenceClassification
     tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone")
@@ -20,15 +21,14 @@ def load_sentiment_model():
 
 sentiment_pipeline = load_sentiment_model()
 
-@st.cache_resource
+# Load Prediction Model
+MODEL_PATH = "/mnt/data/random_forest_model.pkl"
 
-
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_prediction_model(model_path):
     try:
         if os.path.exists(model_path):
-            model = joblib.load(model_path, mmap_mode='r')  # Try memory-mapped mode
-            return model
+            return joblib.load(model_path)
         else:
             st.warning(f"Prediction model file not found at: {model_path}")
             return None
@@ -36,10 +36,10 @@ def load_prediction_model(model_path):
         st.error(f"Error loading prediction model: {e}")
         return None
 
-MODEL_PATH = "random_forest_model.pkl"
 prediction_model = load_prediction_model(MODEL_PATH)
 
-@st.cache_data
+# Fetch Stock Data
+@st.cache_data(show_spinner=False)
 def fetch_stock_data(stock_ticker, start_date, end_date):
     try:
         stock_data = yf.download(stock_ticker, start=start_date, end=end_date, interval="1d")
@@ -52,7 +52,8 @@ def fetch_stock_data(stock_ticker, start_date, end_date):
         st.error(f"Error fetching stock data: {e}")
         return None
 
-@st.cache_data
+# Fetch Current Stock Info
+@st.cache_data(show_spinner=False)
 def fetch_current_stock_info(stock_ticker):
     try:
         stock = yf.Ticker(stock_ticker)
@@ -71,7 +72,8 @@ def fetch_current_stock_info(stock_ticker):
         st.error(f"Error fetching current stock info: {e}")
         return None
 
-@st.cache_data
+# Fetch News Data
+@st.cache_data(show_spinner=False)
 def fetch_news(stock_ticker):
     try:
         rss_url = f"https://news.google.com/rss/search?q={stock_ticker}+stock&hl=en-IN&gl=IN&ceid=IN:en"
@@ -81,6 +83,7 @@ def fetch_news(stock_ticker):
         st.error(f"Error fetching news: {e}")
         return []
 
+# Perform Sentiment Analysis
 def analyze_sentiment(news_articles):
     if news_articles:
         try:
@@ -90,15 +93,14 @@ def analyze_sentiment(news_articles):
             return []
     return []
 
+# Streamlit UI
 st.title("📈 Stock Market Analyzer")
-
 stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upper()
 date = st.date_input("Select Date for Analysis:", datetime.today())
 
 if stock_ticker:
     start_date = (date - timedelta(days=30)).strftime('%Y-%m-%d')
     end_date = date.strftime('%Y-%m-%d')
-
     stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
     stock_info = fetch_current_stock_info(stock_ticker)
     news = fetch_news(stock_ticker)
@@ -115,20 +117,20 @@ if stock_ticker:
             plt.ylabel("Closing Price (USD)")
             plt.title(f"{stock_ticker} Closing Prices")
             st.pyplot(fig)
-
-            st.subheader("📈 Current Stock Information")
-            if stock_info:
-                st.write(f"**Current Price:** ${stock_info['current_price']:.2f}")
-                if stock_info['previous_close']:
-                    st.write(f"**Previous Close:** ${stock_info['previous_close']:.2f}")
-                st.write(f"**Open:** ${stock_info['open']:.2f}")
-                st.write(f"**Day High:** ${stock_info['day_high']:.2f}")
-                st.write(f"**Day Low:** ${stock_info['day_low']:.2f}")
-                st.write(f"**Volume:** {int(stock_info['volume']):,}")
-            else:
-                st.error("❌ No market data found for this stock.")
         else:
             st.error("❌ No stock data available! Please check the ticker symbol.")
+
+        if stock_info:
+            st.subheader("📈 Current Stock Information")
+            st.write(f"**Current Price:** ${stock_info['current_price']:.2f}")
+            if stock_info['previous_close']:
+                st.write(f"**Previous Close:** ${stock_info['previous_close']:.2f}")
+            st.write(f"**Open:** ${stock_info['open']:.2f}")
+            st.write(f"**Day High:** ${stock_info['day_high']:.2f}")
+            st.write(f"**Day Low:** ${stock_info['day_low']:.2f}")
+            st.write(f"**Volume:** {int(stock_info['volume']):,}")
+        else:
+            st.error("❌ No market data found for this stock.")
 
     with col2:
         st.subheader("📰 Latest News & Sentiment")
@@ -153,7 +155,5 @@ if stock_ticker:
                 st.write(f"Predicted Closing Price: ${prediction:.2f}")
             except Exception as e:
                 st.error(f"Error during prediction: {e}")
-        elif prediction_model is None:
-            st.warning("Prediction model not loaded. Check the file path.")
 else:
     st.write("Please enter a stock ticker to begin.")
