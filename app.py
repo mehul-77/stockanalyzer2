@@ -39,7 +39,7 @@ def load_prediction_model(model_path):
         st.error(f"❌ Error loading prediction model: {e}")
         return None
 
-MODEL_PATH = "/mnt/data/random_forest_model.pkl"
+MODEL_PATH = "random_forest_model.pkl"
 prediction_model = load_prediction_model(MODEL_PATH)
 
 
