@@ -7,6 +7,7 @@ from transformers import pipeline
 from datetime import datetime, timedelta
 import joblib
 import numpy as np
+import os
 
 st.set_page_config(page_title="Stock Analyzer", layout="wide")
 
@@ -22,15 +23,18 @@ sentiment_pipeline = load_sentiment_model()
 @st.cache_resource
 def load_prediction_model(model_path):
     try:
-        model = joblib.load(model_path)
-        return model
+        if os.path.exists(model_path):
+            model = joblib.load(model_path)
+            return model
+        else:
+            st.error(f"Model file not found at: {model_path}")
+            return None
     except Exception as e:
         st.error(f"Error loading prediction model: {e}")
         return None
 
-MODEL_PATH = "random_forest_model.pkl"  # **REPLACE** with your model path!
+MODEL_PATH = "random_forest_model.pkl"  # **REPLACE** with the correct relative path
 prediction_model = load_prediction_model(MODEL_PATH)
-
 
 @st.cache_data
 def fetch_stock_data(stock_ticker, start_date, end_date):
@@ -42,7 +46,7 @@ def fetch_stock_data(stock_ticker, start_date, end_date):
         stock_data['Date'] = stock_data['Date'].astype(str)
         return stock_data
     except Exception as e:
-        st.error(f"Error fetching stock data: {e}") # More informative error message
+        st.error(f"Error fetching stock data: {e}")
         return None
 
 @st.cache_data
@@ -61,7 +65,7 @@ def fetch_current_stock_info(stock_ticker):
             "volume": stock_info["Volume"].iloc[-1]
         }
     except Exception as e:
-        st.error(f"Error fetching current stock info: {e}") # More informative error
+        st.error(f"Error fetching current stock info: {e}")
         return None
 
 @st.cache_data
@@ -71,7 +75,7 @@ def fetch_news(stock_ticker):
         feed = feedparser.parse(rss_url)
         return [entry.title for entry in feed.entries[:5]]
     except Exception as e:
-        st.error(f"Error fetching news: {e}") # More informative error
+        st.error(f"Error fetching news: {e}")
         return []
 
 def analyze_sentiment(news_articles):
@@ -79,10 +83,9 @@ def analyze_sentiment(news_articles):
         try:
             return sentiment_pipeline(news_articles)
         except Exception as e:
-            st.error(f"Error in sentiment analysis: {e}") # Error handling
+            st.error(f"Error in sentiment analysis: {e}")
             return []
     return []
-
 
 st.title("📈 Stock Market Analyzer")
 
