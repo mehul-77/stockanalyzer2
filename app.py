@@ -21,10 +21,14 @@ def load_sentiment_model():
 sentiment_pipeline = load_sentiment_model()
 
 @st.cache_resource
+
+
+@st.cache_resource
 def load_prediction_model(model_path):
     try:
         if os.path.exists(model_path):
-            return joblib.load(model_path)
+            model = joblib.load(model_path, mmap_mode='r')  # Try memory-mapped mode
+            return model
         else:
             st.warning(f"Prediction model file not found at: {model_path}")
             return None
