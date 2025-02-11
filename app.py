@@ -97,25 +97,24 @@ def analyze_sentiment(news_articles):
 
 # Stock Recommendation Function
 def get_recommendation(sentiments, prediction, current_price):
-    buy_score = 0
-    sell_score = 0
-    
-    if prediction > current_price:
-        buy_score += 50
-    else:
-        sell_score += 50
+    buy_score = 50 if prediction > current_price else 30
+    sell_score = 50 if prediction < current_price else 30
+    hold_score = 20
     
     for sentiment in sentiments:
         if sentiment['label'] == 'positive':
-            buy_score += 25
+            buy_score += 20
         elif sentiment['label'] == 'negative':
-            sell_score += 25
+            sell_score += 20
+        elif sentiment['label'] == 'neutral':
+            hold_score += 30
     
-    total_score = buy_score + sell_score
-    buy_percentage = (buy_score / total_score) * 100 if total_score > 0 else 50
-    sell_percentage = 100 - buy_percentage
+    total_score = buy_score + sell_score + hold_score
+    buy_percentage = (buy_score / total_score) * 100 if total_score > 0 else 33.33
+    sell_percentage = (sell_score / total_score) * 100 if total_score > 0 else 33.33
+    hold_percentage = (hold_score / total_score) * 100 if total_score > 0 else 33.33
     
-    return buy_percentage, sell_percentage
+    return buy_percentage, sell_percentage, hold_percentage
 
 # Streamlit UI
 st.title("📈 Stock Market Analyzer")
@@ -158,9 +157,10 @@ if stock_ticker:
             st.subheader("🔮 Stock Price Prediction")
             st.write(f"Predicted Closing Price: ${prediction:.2f}")
             
-            buy_percentage, sell_percentage = get_recommendation(sentiments, prediction, stock_info['current_price'])
+            buy_percentage, sell_percentage, hold_percentage = get_recommendation(sentiments, prediction, stock_info['current_price'])
             st.subheader("📊 Recommendation")
             st.write(f"**Buy Probability:** {buy_percentage:.2f}%")
             st.write(f"**Sell Probability:** {sell_percentage:.2f}%")
+            st.write(f"**Hold Probability:** {hold_percentage:.2f}%")
         except Exception as e:
             st.error(f"Error during prediction: {e}")
