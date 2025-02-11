@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 import feedparser
 from transformers import pipeline
 from datetime import datetime, timedelta
-from PIL import Image
-import requests
-from io import BytesIO
 
 # Ensure page configuration is set first
 st.set_page_config(page_title="Stock Analyzer", layout="wide")
@@ -39,8 +36,18 @@ def fetch_stock_data(stock_ticker, start_date, end_date):
 @st.cache_data
 def fetch_current_stock_info(stock_ticker):
     try:
-        stock_info = yf.Ticker(stock_ticker).info
-        return stock_info if "regularMarketPrice" in stock_info else None
+        stock = yf.Ticker(stock_ticker)
+        stock_info = stock.history(period="1d")
+        if stock_info.empty:
+            return None
+        return {
+            "current_price": stock_info["Close"].iloc[-1],
+            "previous_close": stock_info["Close"].iloc[-2] if len(stock_info) > 1 else None,
+            "open": stock_info["Open"].iloc[-1],
+            "day_high": stock_info["High"].iloc[-1],
+            "day_low": stock_info["Low"].iloc[-1],
+            "volume": stock_info["Volume"].iloc[-1]
+        }
     except Exception as e:
         return None
 
@@ -60,15 +67,6 @@ def analyze_sentiment(news_articles):
         return sentiment_pipeline(news_articles)
     return []
 
-# Function to fetch stock live images
-def fetch_stock_image(stock_ticker):
-    try:
-        url = f"https://source.unsplash.com/600x300/?{stock_ticker},stock,finance"
-        response = requests.get(url)
-        return Image.open(BytesIO(response.content))
-    except:
-        return None
-
 # Streamlit UI with Multiple Pages
 st.sidebar.title("📊 Stock Market Dashboard")
 page = st.sidebar.radio("Navigation", ["Home", "Stock Analysis", "News & Sentiment", "About"])
@@ -76,7 +74,7 @@ page = st.sidebar.radio("Navigation", ["Home", "Stock Analysis", "News & Sentime
 if page == "Home":
     st.title("📈 Welcome to Stock Market Analyzer")
     st.write("Analyze stock prices, news, and sentiment in one place!")
-    st.image("https://source.unsplash.com/800x400/?stock,market")
+    st.image("https://upload.wikimedia.org/wikipedia/commons/4/4f/Stock_Market_Board.jpg", caption="Stock Market Overview")
 
 elif page == "Stock Analysis":
     st.title("📊 Stock Analysis")
@@ -89,11 +87,7 @@ elif page == "Stock Analysis":
 
         stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
         stock_info = fetch_current_stock_info(stock_ticker)
-        stock_image = fetch_stock_image(stock_ticker)
 
-        if stock_image:
-            st.image(stock_image, caption=f"Live Image of {stock_ticker}")
-        
         if stock_data is not None:
             st.subheader("📈 Stock Price Trend")
             fig, ax = plt.subplots()
@@ -108,9 +102,13 @@ elif page == "Stock Analysis":
 
         if stock_info:
             st.subheader("📈 Current Stock Information")
-            st.write(f"**Current Price:** ${stock_info['regularMarketPrice']}")
-            st.write(f"**Previous Close:** ${stock_info['regularMarketPreviousClose']}")
-            st.write(f"**Open:** ${stock_info['regularMarketOpen']}")
+            st.write(f"**Current Price:** ${stock_info['current_price']}")
+            if stock_info['previous_close']:
+                st.write(f"**Previous Close:** ${stock_info['previous_close']}")
+            st.write(f"**Open:** ${stock_info['open']}")
+            st.write(f"**Day High:** ${stock_info['day_high']}")
+            st.write(f"**Day Low:** ${stock_info['day_low']}")
+            st.write(f"**Volume:** {stock_info['volume']}")
         else:
             st.error("❌ No market data found for this stock.")
 
