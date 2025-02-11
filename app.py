@@ -28,7 +28,7 @@ def load_prediction_model(model_path):
         st.error(f"Error loading prediction model: {e}")
         return None
 
-MODEL_PATH = "your_model.pkl"  # **REPLACE** with your model path!
+MODEL_PATH = "random_forest_model.pkl"  # **REPLACE** with your model path!
 prediction_model = load_prediction_model(MODEL_PATH)
 
 
