@@ -159,8 +159,8 @@ if stock_ticker:
             
             buy_percentage, sell_percentage, hold_percentage = get_recommendation(sentiments, prediction, stock_info['current_price'])
             st.subheader("📊 Recommendation")
-            st.write(f"**Buy Probability:** {buy_percentage:.2f}%")
-            st.write(f"**Sell Probability:** {sell_percentage:.2f}%")
-            st.write(f"**Hold Probability:** {hold_percentage:.2f}%")
+            st.write(f"✅ **Buy Probability:** {buy_percentage:.2f}%")
+            st.write(f"❌ **Sell Probability:** {sell_percentage:.2f}%")
+            st.write(f"🤝 **Hold Probability:** {hold_percentage:.2f}%")
         except Exception as e:
             st.error(f"Error during prediction: {e}")
