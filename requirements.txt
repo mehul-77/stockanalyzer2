@@ -7,9 +7,8 @@ sentencepiece==0.2.0
 protobuf==4.25.3
 feedparser==6.0.11
 matplotlib==3.8.3
-joblib
+joblib==1.4.2
 scikit-learn==1.6.0
-setuptools>=68.0.0
-newsapi-python
-GoogleNews
+numpy==1.26.4
+scipy==1.15.1
 --find-links https://download.pytorch.org/whl/torch_stable.html
