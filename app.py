@@ -8,7 +8,10 @@ from datetime import datetime, timedelta
 import joblib
 import numpy as np
 import os
+import pickle
+from sklearn.preprocessing import StandardScaler
 
+# Streamlit Page Configuration
 st.set_page_config(page_title="Stock Analyzer", layout="wide")
 
 # Load Sentiment Analysis Model
@@ -21,24 +24,41 @@ def load_sentiment_model():
 
 sentiment_pipeline = load_sentiment_model()
 
-# Load Prediction Model
+# Load Random Forest Model and Scaler
 MODEL_PATH = "random_forest_model.pkl"
+SCALER_PATH = "scaler.pkl"
 
 @st.cache_resource(show_spinner=False)
-def load_prediction_model(model_path):
+def load_prediction_model_and_scaler(model_path, scaler_path):
     try:
-        if os.path.exists(model_path):
+        if os.path.exists(model_path) and os.path.exists(scaler_path):
             model = joblib.load(model_path)
-            st.success("✅ Prediction model loaded successfully!")
-            return model
+            scaler = joblib.load(scaler_path)
+            st.success("✅ Model and Scaler loaded successfully!")
+            return model, scaler
         else:
-            st.warning(f"⚠️ Prediction model file not found at: {model_path}")
-            return None
+            st.warning(f"⚠️ Model or Scaler file not found at: {model_path} or {scaler_path}")
+            return None, None
     except Exception as e:
-        st.error(f"❌ Error loading prediction model: {e}")
-        return None
+        st.error(f"❌ Error loading model or scaler: {e}")
+        return None, None
 
-prediction_model = load_prediction_model(MODEL_PATH)
+prediction_model, scaler = load_prediction_model_and_scaler(MODEL_PATH, SCALER_PATH)
+
+# Ensure Required Features
+REQUIRED_FEATURES = [
+    "Adj Close", "Close", "High", "Low", "Open", "Volume",
+    "Daily_Return", "Sentiment_Score", "Headlines_Count",
+    "Next_Day_Return", "Moving_Avg", "Rolling_Std_Dev",
+    "RSI", "EMA", "ROC", "Sentiment_Numeric"
+]
+
+def ensure_features(df, required_features):
+    for feature in required_features:
+        if feature not in df.columns:
+            df[feature] = 0
+    df = df[required_features]
+    return df
 
 # Fetch Stock Data
 @st.cache_data(show_spinner=False)
@@ -90,7 +110,6 @@ def analyze_sentiment(news_articles):
     if news_articles:
         try:
             sentiments = sentiment_pipeline(news_articles)
-            # Map scores to custom values
             for sentiment in sentiments:
                 if sentiment["label"] == "positive":
                     sentiment["score"] = 1.0
@@ -187,8 +206,9 @@ with col2:
     st.subheader("🚀 Investment Recommendation")
     if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
         try:
-            last_30_days_data = stock_data['Close'].values[-30:]
-            input_data = last_30_days_data.reshape(1, -1)
+            # Prepare input data for the model
+            input_data = stock_data[['Close']].values[-30:].reshape(1, -1)
+            input_data = scaler.transform(input_data)  # Apply scaler
             prediction = prediction_model.predict(input_data)[0]
             
             buy, hold, sell = get_recommendation(
