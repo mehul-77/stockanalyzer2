@@ -25,7 +25,6 @@ from transformers import pipeline
 import warnings
 from pytz import timezone
 from pandas.tseries.holiday import USFederalHolidayCalendar
-import torch  # Now properly installed
 
 # Configuration
 warnings.filterwarnings("ignore", category=FutureWarning)
