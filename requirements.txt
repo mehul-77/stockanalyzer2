@@ -11,4 +11,6 @@ joblib==1.4.2
 scikit-learn==1.6.0
 numpy==1.26.4
 scipy==1.15.1
+talib
+
 --find-links https://download.pytorch.org/whl/torch_stable.html
