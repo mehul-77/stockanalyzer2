@@ -164,27 +164,36 @@ if validate_ticker(ticker):
     
     with st.spinner("Analyzing market data..."):
         market_data = fetch_market_data(ticker, start_date, end_date)
-        news_headlines = fetch_news(ticker)  # Corrected function name
+        news_headlines = fetch_news(ticker)
         sentiment_results = analyze_news_sentiment(news_headlines, sentiment_analyzer)
         
     try:
         # Feature Engineering
         processed_data = engineer_features(market_data.copy())
-        processed_data = processed_data[REQUIRED_FEATURES].tail(30)
+        processed_data = processed_data[REQUIRED_FEATURES]
         
-        if processed_data.shape != (30, len(REQUIRED_FEATURES)):
-            raise ValueError("Data validation failed")
+        # Data Validation
+        if len(processed_data) < 30:
+            st.error("Minimum 30 trading days of data required")
+            st.stop()
             
+        if processed_data.shape[1] != len(REQUIRED_FEATURES):
+            st.error("Feature dimension mismatch in processed data")
+            st.stop()
+
+        # Prepare input data
+        input_data = processed_data.tail(30).values.reshape(-1, len(REQUIRED_FEATURES))
+        scaled_data = scaler.transform(input_data)
+        
         # Model Prediction
-        scaled_data = scaler.transform(processed_data)
-        predicted_price = model.predict(scaled_data)[0]
+        prediction = model.predict(scaled_data[-1].reshape(1, -1))[0]
         current_price = market_data['Close'].iloc[-1]
         
         # Expert Rating Display
         st.markdown(f"""
         <div class='expert-rating'>
             <div class='rating-header'>Expert Consensus Rating</div>
-            <div class='main-rating'>{(predicted_price/current_price*100)-100:.1f}%</div>
+            <div class='main-rating'>{(prediction/current_price*100)-100:.1f}%</div>
             <div class='breakdown-item">
                 <span>Model Confidence</span>
                 <span>{np.mean([res['score'] for res in sentiment_results]):.0% if sentiment_results else 'N/A'}</span>
