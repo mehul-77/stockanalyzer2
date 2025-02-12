@@ -40,6 +40,27 @@ def load_prediction_model(model_path):
 
 prediction_model = load_prediction_model(MODEL_PATH)
 
+# Function to calculate Buy/Sell/Hold probabilities
+def get_recommendation(sentiments, prediction, current_price):
+    buy_score = 50 if prediction > current_price else 30
+    sell_score = 50 if prediction < current_price else 30
+    hold_score = 20
+    
+    for sentiment in sentiments:
+        if sentiment['label'] == 'positive':
+            buy_score += 20
+        elif sentiment['label'] == 'negative':
+            sell_score += 20
+        elif sentiment['label'] == 'neutral':
+            hold_score += 30
+    
+    total_score = buy_score + sell_score + hold_score
+    buy_percentage = (buy_score / total_score) * 100 if total_score > 0 else 33.33
+    sell_percentage = (sell_score / total_score) * 100 if total_score > 0 else 33.33
+    hold_percentage = (hold_score / total_score) * 100 if total_score > 0 else 33.33
+    
+    return buy_percentage, sell_percentage, hold_percentage
+
 # Fetch Stock Data
 @st.cache_data(show_spinner=False)
 def fetch_stock_data(stock_ticker, start_date, end_date):
@@ -61,7 +82,6 @@ def fetch_current_stock_info(stock_ticker):
         stock = yf.Ticker(stock_ticker)
         stock_info = stock.history(period="1d")
         if stock_info.empty:
-            st.error(f"❌ No market data found for {stock_ticker}.")
             return None
         return {
             "current_price": stock_info["Close"].iloc[-1],
@@ -72,7 +92,7 @@ def fetch_current_stock_info(stock_ticker):
             "volume": stock_info["Volume"].iloc[-1]
         }
     except Exception as e:
-        st.error(f"❌ Error fetching current stock info: {e}")
+        st.error(f"Error fetching current stock info: {e}")
         return None
 
 # Fetch News Data
@@ -96,74 +116,39 @@ def analyze_sentiment(news_articles):
             return []
     return []
 
-# Stock Recommendation Function
-def get_recommendation(sentiments, prediction, current_price):
-    if current_price is None:
-        return 0, 0, 100
-    
-    buy_score = 50 if prediction > current_price else 30
-    sell_score = 50 if prediction < current_price else 30
-    hold_score = 20
-    
-    for sentiment in sentiments:
-        if sentiment['label'] == 'positive':
-            buy_score += 20
-        elif sentiment['label'] == 'negative':
-            sell_score += 20
-        elif sentiment['label'] == 'neutral':
-            hold_score += 30
-    
-    total_score = buy_score + sell_score + hold_score
-    buy_percentage = (buy_score / total_score) * 100 if total_score > 0 else 33.33
-    sell_percentage = (sell_score / total_score) * 100 if total_score > 0 else 33.33
-    hold_percentage = (hold_score / total_score) * 100 if total_score > 0 else 33.33
-    
-    return buy_percentage, sell_percentage, hold_percentage
-
 # Streamlit UI
 st.title("📈 Stock Market Analyzer")
 stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upper()
 date = st.date_input("Select Date for Analysis:", datetime.today())
 
+# Ensure stock_data is always defined
 stock_data = None
 stock_info = None
+
 if stock_ticker:
     start_date = (date - timedelta(days=30)).strftime('%Y-%m-%d')
     end_date = date.strftime('%Y-%m-%d')
     stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
     stock_info = fetch_current_stock_info(stock_ticker)
     news = fetch_news(stock_ticker)
+    sentiments = analyze_sentiment(news)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if stock_data is not None and not stock_data.empty:
-            st.subheader("📈 Stock Price Trend")
-            fig, ax = plt.subplots()
-            ax.plot(stock_data['Date'], stock_data['Close'], marker='o', linestyle='-')
-            plt.xticks(rotation=45)
-            plt.xlabel("Date")
-            plt.ylabel("Closing Price (USD)")
-            plt.title(f"{stock_ticker} Closing Prices")
-            st.pyplot(fig)
-    with col2:
-        st.subheader("📰 Latest News & Sentiment")
-        sentiments = analyze_sentiment(news)
-        for i, article in enumerate(news):
-            st.write(f"**News {i+1}:** {article}")
-            st.write(f"Sentiment: {sentiments[i]['label']} (Score: {sentiments[i]['score']:.2f})")
-            st.write("---")
-
-    if prediction_model and stock_data is not None and len(stock_data) >= 30:
+    if stock_data is None:
+        st.error("❌ No stock data available! Please check the ticker symbol.")
+    
+    if prediction_model and stock_data is not None and isinstance(stock_data, pd.DataFrame) and len(stock_data) >= 30:
         try:
             last_30_days_data = stock_data['Close'].values[-30:]
             input_data = last_30_days_data.reshape(1, -1)
             prediction = prediction_model.predict(input_data)[0]
             st.subheader("🔮 Stock Price Prediction")
             st.write(f"Predicted Closing Price: ${prediction:.2f}")
-            buy_percentage, sell_percentage, hold_percentage = get_recommendation(sentiments, prediction, stock_info['current_price'] if stock_info else None)
-            st.subheader("📊 Recommendation")
-            st.write(f"✅ **Buy Probability:** {buy_percentage:.2f}%")
-            st.write(f"❌ **Sell Probability:** {sell_percentage:.2f}%")
-            st.write(f"🤝 **Hold Probability:** {hold_percentage:.2f}%")
+            
+            if stock_info:
+                buy_percentage, sell_percentage, hold_percentage = get_recommendation(sentiments, prediction, stock_info['current_price'])
+                st.subheader("📊 Investment Recommendation")
+                st.write(f"✅ **Buy Probability:** {buy_percentage:.2f}%")
+                st.write(f"❌ **Sell Probability:** {sell_percentage:.2f}%")
+                st.write(f"🤝 **Hold Probability:** {hold_percentage:.2f}%")
         except Exception as e:
             st.error(f"Error during prediction: {e}")
