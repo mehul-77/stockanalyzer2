@@ -39,13 +39,12 @@ def load_prediction_model_and_scaler(model_path, scaler_path):
         if os.path.exists(model_path) and os.path.exists(scaler_path):
             model = joblib.load(model_path)
             scaler = joblib.load(scaler_path)
-            st.success("✅ Model and Scaler loaded successfully!")
             return model, scaler
         else:
-            st.warning(f"⚠️ Model or Scaler file not found at: {model_path} or {scaler_path}")
+            st.warning(f"Model or Scaler file not found at: {model_path} or {scaler_path}")
             return None, None
     except Exception as e:
-        st.error(f"❌ Error loading model or scaler: {e}")
+        st.error(f"Error loading model or scaler: {e}")
         return None, None
 
 prediction_model, scaler = load_prediction_model_and_scaler(MODEL_PATH, SCALER_PATH)
@@ -202,7 +201,7 @@ with col1:
         plt.title(f"{stock_ticker} Closing Prices")
         st.pyplot(fig)
     else:
-        st.error("❌ No stock data available! Please check the ticker symbol.")
+        st.error("No stock data available! Please check the ticker symbol.")
 
     if stock_info:
         st.subheader("📊 Current Stock Information")
@@ -214,7 +213,7 @@ with col1:
         st.write(f"**Day Low:** ${stock_info['day_low']:.2f}")
         st.write(f"**Volume:** {int(stock_info['volume']):,}")
     else:
-        st.error("❌ No market data found for this stock.")
+        st.error("No market data found for this stock.")
 
 with col2:
     st.subheader("📰 Latest News & Sentiment")
@@ -244,8 +243,6 @@ if prediction_model and scaler and stock_data is not None and len(stock_data) > 
 
         # 3. Prepare Input Data for Prediction (using the LAST 30 days, or less if not available)
         input_data = stock_data[REQUIRED_FEATURES].tail(min(30, len(stock_data)))  # Use .tail() and handle cases with less than 30 days
-        st.write("Input Data Shape:", input_data.shape)  # Debug
-        st.write("Input Data:", input_data)  # Debug
 
         # 4. Scaling
         input_data_scaled = scaler.transform(input_data)
@@ -272,16 +269,6 @@ if prediction_model and scaler and stock_data is not None and len(stock_data) > 
         st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
 
     except Exception as e:
-        st.error(f"Error during prediction: {e}")
-        st.write("Debug Info:")  # Provide more debug info
-        st.write(f"Model Loaded: {prediction_model is not None}")
-        st.write(f"Scaler Loaded: {scaler is not None}")
-        st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
-        if stock_data is not None:
-            st.write(f"Stock Data Columns: {stock_data.columns}")  # Check available columns
+        st.error("An error occurred while generating recommendations. Please try again later.")
 else:
-    st.warning("⚠️ Not enough data to generate recommendations")
-    st.write("Debug Info:")
-    st.write(f"Model Loaded: {prediction_model is not None}")
-    st.write(f"Scaler Loaded: {scaler is not None}")
-    st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
+    st.warning("Not enough data to generate recommendations.")
