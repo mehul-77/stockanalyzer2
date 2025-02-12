@@ -133,32 +133,39 @@ if stock_ticker:
             st.error("❌ No market data found for this stock.")
 
     with col2:
-        st.subheader("📰 Latest News & Sentiment")
-        if news:
-            sentiments = analyze_sentiment(news)
-            for i, article in enumerate(news):
-                st.write(f"**News {i+1}:** {article}")
-                if sentiments and i < len(sentiments):
-                    st.write(f"Sentiment: {sentiments[i]['label']} (Score: {sentiments[i]['score']:.2f})")
-                else:
-                    st.write("Sentiment: Not Available")
-                st.write("---")
-        else:
-            st.write("No news available.")
+    st.subheader("📰 Latest News & Sentiment")
+    
+    if news:
+        sentiments = analyze_sentiment(news)
+        for i, article in enumerate(news):
+            st.write(f"**News {i+1}:** {article}")
+            if sentiments and i < len(sentiments):
+                st.write(f"Sentiment: {sentiments[i]['label']} (Score: {sentiments[i]['score']:.2f})")
+            else:
+                st.write("Sentiment: Not Available")
+            st.write("---")
+    else:
+        st.write("No news available.")
 
-        if prediction_model and stock_data is not None and len(stock_data) >= 30:
-            try:
-                last_30_days_data = stock_data['Close'].values[-30:]
-                input_data = last_30_days_data.reshape(1, -1)
-                prediction = prediction_model.predict(input_data)[0]
-                probabilities = prediction_model.predict_proba(input_data)[0]
+    # 🟢 ADD A NEW BOX FOR RECOMMENDATION BELOW NEWS
+    st.subheader("📊 Investment Recommendation")
+    recommendation_box = st.container()
+    
+    if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
+        try:
+            last_30_days_data = stock_data['Close'].values[-30:]
+            input_data = last_30_days_data.reshape(1, -1)
+            prediction = prediction_model.predict(input_data)[0]
 
-                st.subheader("🔮 Stock Price Prediction")
-                st.write(f"Predicted Closing Price: ${prediction:.2f}")
-                st.write(f"**Buy Probability:** {probabilities[0]:.2f}")
-                st.write(f"**Hold Probability:** {probabilities[1]:.2f}")
-                st.write(f"**Sell Probability:** {probabilities[2]:.2f}")
-            except Exception as e:
-                st.error(f"Error during prediction: {e}")
-else:
-    st.write("Please enter a stock ticker to begin.")
+            buy_percentage, sell_percentage, hold_percentage = get_recommendation(sentiments, prediction, stock_info['current_price'])
+
+            with recommendation_box:
+                st.info(f"✅ **Buy Probability:** {buy_percentage:.2f}%")
+                st.warning(f"⚠️ **Hold Probability:** {hold_percentage:.2f}%")
+                st.error(f"❌ **Sell Probability:** {sell_percentage:.2f}%")
+        
+        except Exception as e:
+            st.error(f"❌ Error during prediction: {e}")
+    else:
+        with recommendation_box:
+            st.warning("⚠️ Not enough data to generate recommendations.")
