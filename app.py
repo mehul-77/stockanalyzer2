@@ -1,194 +1,124 @@
-# app.py
+# main.py
+import sys
+import subprocess
+import pkg_resources
 import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import feedparser
-import joblib
-import ta
-from datetime import datetime, date, timedelta
-from sklearn.preprocessing import StandardScaler
-from transformers import pipeline
-import warnings
-from pytz import timezone
-from pandas.tseries.holiday import USFederalHolidayCalendar
 
-# Configuration
-warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
-st.set_page_config(page_title="Stock Analyzer Pro", layout="wide")
+# Dependency configuration
+REQUIREMENTS = {
+    'torch': '2.0.1',
+    'transformers': '4.30.0',
+    'streamlit': '1.23.1',
+    'numpy': '1.24.3',
+    'pandas': '2.0.3',
+    'yfinance': '0.2.18',
+    'matplotlib': '3.7.1'
+}
 
-# Constants
-MODEL_PATH = "random_forest_model.pkl"
-SCALER_PATH = "scaler.pkl"
-REQUIRED_FEATURES = [
-    "Close", "High", "Low", "Open", "Volume", "Adj Close",
-    "Daily_Return", "Moving_Avg", "Rolling_Std_Dev",
-    "RSI", "EMA", "ROC", "Sentiment_Score"
-]
-
-# UI Configuration
-st.markdown("""
-<style>
-    .expert-rating { 
-        background: #f8f9fa; 
-        padding: 25px; 
-        border-radius: 15px; 
-        margin: 20px 0; 
-    }
-    .rating-header { 
-        color: #2c3e50; 
-        font-size: 24px; 
-        margin-bottom: 15px; 
-        font-weight: 600; 
-    }
-    .main-rating { 
-        font-size: 42px; 
-        font-weight: 700; 
-        color: #27ae60; 
-        margin-bottom: 20px; 
-    }
-    .metric-box {
-        background: white;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Helper Functions
-def get_current_date():
-    return datetime.now(timezone('UTC')).date()
-
-def validate_ticker(ticker):
-    return len(ticker) > 0 and ticker.isalpha()
-
-# Model Loading
-@st.cache_resource
-def load_models():
-    try:
-        return joblib.load(MODEL_PATH), joblib.load(SCALER_PATH)
-    except Exception as e:
-        st.error(f"Model loading failed: {str(e)}")
-        st.stop()
-
-# Data Processing
-def engineer_features(df):
-    try:
-        df['Daily_Return'] = df['Close'].pct_change()
-        df['Moving_Avg'] = df['Close'].rolling(10).mean()
-        df['Rolling_Std_Dev'] = df['Close'].rolling(10).std()
-        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
-        df['EMA'] = ta.trend.ema_indicator(df['Close'], window=12)
-        df['ROC'] = ta.momentum.roc(df['Close'], window=10)
-        return df.fillna(0).astype(np.float32)
-    except Exception as e:
-        st.error(f"Feature engineering error: {str(e)}")
-        st.stop()
-
-@st.cache_data(show_spinner=False)
-def get_stock_data(ticker, days=730):
-    try:
-        end_date = datetime.today().strftime('%Y-%m-%d')
-        start_date = (datetime.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-        df = yf.download(ticker, start=start_date, end=end_date)
-        return df.reset_index()
-    except Exception as e:
-        st.error(f"Data fetch failed: {str(e)}")
-        st.stop()
-
-@st.cache_data(show_spinner=False)
-def get_news(ticker):
-    try:
-        feed = feedparser.parse(f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en")
-        return [entry.title for entry in feed.entries[:3]]
-    except:
-        return []
-
-# Sentiment Analysis
-@st.cache_resource
-def load_sentiment_analyzer():
-    try:
-        return pipeline("text-classification", model="yiyanghkust/finbert-tone")
-    except Exception as e:
-        st.error(f"Sentiment analysis setup failed: {str(e)}")
-        st.stop()
-
-# Main App
-def main():
-    st.title("Stock Analysis Pro")
+def check_dependencies():
+    """Verify all required packages are installed and compatible"""
+    missing = []
+    outdated = []
+    for package, required_version in REQUIREMENTS.items():
+        try:
+            installed = pkg_resources.get_distribution(package)
+            if pkg_resources.parse_version(installed.version) < pkg_resources.parse_version(required_version):
+                outdated.append(f"{package} ({installed.version} < {required_version})")
+        except pkg_resources.DistributionNotFound:
+            missing.append(package)
     
-    # User Inputs
+    if missing or outdated:
+        st.error("Dependency issues detected!")
+        if missing:
+            st.error(f"Missing packages: {', '.join(missing)}")
+        if outdated:
+            st.error(f"Update required: {', '.join(outdated)}")
+        st.error("Run: pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu")
+        st.stop()
+
+def safe_import(module_name, package_name=None):
+    """Import with clear error handling"""
+    try:
+        return __import__(module_name, fromlist=[package_name] if package_name else None)
+    except ImportError as e:
+        st.error(f"Critical import failed: {str(e)}")
+        st.stop()
+
+# Initialize core dependencies
+check_dependencies()
+np = safe_import('numpy')
+pd = safe_import('pandas')
+plt = safe_import('matplotlib.pyplot')
+torch = safe_import('torch')
+yf = safe_import('yfinance')
+ta = safe_import('ta')
+transformers = safe_import('transformers')
+
+# Streamlit app configuration
+st.set_page_config(
+    page_title="Stock Analyzer Pro",
+    page_icon="📈",
+    layout="wide"
+)
+
+def fetch_stock_data(ticker, period='1y'):
+    """Fetch and preprocess stock data"""
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period=period)
+    
+    if hist.empty:
+        st.error(f"No data found for {ticker}")
+        return None
+    
+    # Calculate technical indicators
+    hist['SMA_20'] = ta.trend.sma_indicator(hist['Close'], window=20)
+    hist['RSI'] = ta.momentum.rsi(hist['Close'])
+    hist.dropna(inplace=True)
+    return hist
+
+def plot_stock_data(data, ticker):
+    """Visualize stock data with technical indicators"""
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+    
+    # Price and SMA
+    ax1.plot(data.index, data['Close'], label='Closing Price')
+    ax1.plot(data.index, data['SMA_20'], label='20-day SMA')
+    ax1.set_ylabel('Price')
+    ax1.legend()
+    
+    # RSI
+    ax2.plot(data.index, data['RSI'], label='RSI', color='orange')
+    ax2.axhline(30, linestyle='--', alpha=0.5, color='red')
+    ax2.axhline(70, linestyle='--', alpha=0.5, color='green')
+    ax2.set_ylabel('RSI')
+    
+    plt.suptitle(f"{ticker} Technical Analysis")
+    st.pyplot(fig)
+
+# Main application UI
+def main():
+    st.title("Stock Technical Analyzer")
+    
+    # User inputs
     col1, col2 = st.columns(2)
     with col1:
-        ticker = st.text_input("Stock Ticker", "AAPL").upper().strip()
+        ticker = st.text_input("Enter Stock Ticker", "AAPL").upper()
     with col2:
-        analysis_date = st.date_input("Analysis Date", date.today())
-
-    if not validate_ticker(ticker):
-        st.error("Invalid ticker symbol")
-        return
-
-    # Load Models
-    model, scaler = load_models()
-    sentiment_analyzer = load_sentiment_analyzer()
-
-    # Get Data
-    with st.spinner("Analyzing market data..."):
-        try:
-            # Stock Data
-            df = get_stock_data(ticker)
-            if len(df) < 30:
-                st.error("Insufficient historical data")
-                return
-                
-            # Feature Engineering
-            processed_data = engineer_features(df)
-            input_data = processed_data[REQUIRED_FEATURES].tail(30).values
-            
-            # Validate Input Shape
-            if input_data.shape != (30, len(REQUIRED_FEATURES)):
-                st.error("Data shape mismatch")
-                return
-                
-            # Prediction
-            scaled_data = scaler.transform(input_data.reshape(-1, len(REQUIRED_FEATURES)))
-            prediction = model.predict(scaled_data[-1].reshape(1, -1))[0]
-            current_price = df['Close'].iloc[-1]
-
-            # News Analysis
-            news = get_news(ticker)
-            sentiments = [sentiment_analyzer(headline)[0] for headline in news] if news else []
-
-            # Display Results
-            st.markdown(f"""
-            <div class='expert-rating'>
-                <div class='rating-header'>Expert Rating</div>
-                <div class='main-rating'>{prediction/current_price*100-100:.1f}%</div>
-                <div class='metric-box'>
-                    Current Price: ${current_price:.2f}<br>
-                    Predicted Price: ${prediction:.2f}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # News Section
-            if news:
-                st.subheader("Market Sentiment")
-                cols = st.columns(3)
-                for idx, (headline, sentiment) in enumerate(zip(news, sentiments)):
-                    cols[idx%3].markdown(f"""
-                    <div class='metric-box'>
-                        📰 {headline}<br>
-                        <hr>
-                        {sentiment['label']} ({sentiment['score']:.0%})
-                    </div>
-                    """, unsafe_allow_html=True)
-
-        except Exception as e:
-            st.error(f"Analysis failed: {str(e)}")
+        period = st.selectbox("Analysis Period", ['1mo', '3mo', '6mo', '1y', '5y'])
+    
+    if st.button("Analyze"):
+        with st.spinner("Fetching and analyzing data..."):
+            try:
+                data = fetch_stock_data(ticker, period)
+                if data is not None:
+                    st.subheader(f"{ticker} Analysis Results")
+                    plot_stock_data(data, ticker)
+                    
+                    # Display raw data
+                    with st.expander("View Raw Data"):
+                        st.dataframe(data.tail(10))
+            except Exception as e:
+                st.error(f"Analysis failed: {str(e)}")
 
 if __name__ == "__main__":
     main()
