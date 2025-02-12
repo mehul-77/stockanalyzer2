@@ -1,16 +1,9 @@
-# requirements.txt
-torch==2.0.1+cpu --extra-index-url https://download.pytorch.org/whl/cpu
-transformers==4.30.0
-yfinance==0.2.18
-pandas==2.0.3
-numpy==1.24.3
-scikit-learn==1.2.2
-ta==0.11.0
-feedparser==6.0.10
-streamlit==1.23.1
-matplotlib==3.7.1
-pytz==2023.3
-markdown-it-py>=2.2.0
-rich>=13.7.0
-protobuf<4
-python-dateutil>=2.8.2
+streamlit
+yfinance
+pandas
+numpy
+joblib
+plotly
+GoogleNews
+transformers
+torch
