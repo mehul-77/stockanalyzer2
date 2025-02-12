@@ -44,11 +44,11 @@ def get_current_date():
     """Get current date in UTC timezone"""
     return datetime.now(timezone('UTC')).date()
 
-def is_trading_day(date):
+def is_trading_day(selected_date):
     """Check if a date is a US trading day"""
     cal = USFederalHolidayCalendar()
     holidays = cal.holidays(start='2020-01-01', end='2030-12-31').date
-    return date.weekday() < 5 and date not in holidays
+    return selected_date.weekday() < 5 and selected_date not in holidays
 
 def validate_ticker(ticker):
     """Basic ticker validation"""
@@ -110,6 +110,17 @@ def fetch_market_data(ticker, start_date, end_date):
         st.write("- Ensure internet connection")
         st.stop()
 
+@st.cache_data(show_spinner=False)
+def fetch_news(ticker):
+    """Fetch relevant news headlines with error handling"""
+    try:
+        rss_url = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
+        feed = feedparser.parse(rss_url)
+        return [entry.title for entry in feed.entries[:5]]
+    except Exception as e:
+        st.error(f"News fetch error: {str(e)}")
+        return []
+
 # Sentiment Analysis
 def analyze_news_sentiment(headlines, analyzer):
     """Process news headlines with fallback"""
@@ -153,7 +164,7 @@ if validate_ticker(ticker):
     
     with st.spinner("Analyzing market data..."):
         market_data = fetch_market_data(ticker, start_date, end_date)
-        news_headlines = get_news(ticker)
+        news_headlines = fetch_news(ticker)
         sentiment_results = analyze_news_sentiment(news_headlines, sentiment_analyzer)
         
     try:
@@ -176,7 +187,7 @@ if validate_ticker(ticker):
             <div class='main-rating'>{(predicted_price/current_price*100)-100:.1f}%</div>
             <div class='breakdown-item'>
                 <span>Model Confidence</span>
-                <span>{np.mean([res['score'] for res in sentiment_results]):.0%}</span>
+                <span>{np.mean([res['score'] for res in sentiment_results]):.0% if sentiment_results else 'N/A'}</span>
             </div>
             <div class='disclaimer'>
                 Aggregated analysis from market data and news sentiment
