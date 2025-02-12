@@ -203,9 +203,10 @@ with col2:
         st.write("No news available.")
     
     # Recommendation Section
-   st.subheader("🚀 Investment Recommendation")
-   if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
-     try:
+  # Recommendation Section
+st.subheader("🚀 Investment Recommendation")
+if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
+    try:
         # Debug: Check input data
         st.write("Input Data Shape:", stock_data[['Close']].values[-30:].reshape(1, -1).shape)
         st.write("Input Data:", stock_data[['Close']].values[-30:].reshape(1, -1))
@@ -233,11 +234,10 @@ with col2:
         
     except Exception as e:
         st.error(f"Error during prediction: {e}")
-    else:
-        st.warning("⚠️ Not enough data to generate recommendations")
-        st.write("Debug Info:")
-        st.write(f"Model Loaded: {prediction_model is not None}")
-        st.write(f"Scaler Loaded: {scaler is not None}")
-        st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
 else:
     st.warning("⚠️ Not enough data to generate recommendations")
+    st.write("Debug Info:")
+    st.write(f"Model Loaded: {prediction_model is not None}")
+    st.write(f"Scaler Loaded: {scaler is not None}")
+    st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
+
