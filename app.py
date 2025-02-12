@@ -152,6 +152,7 @@ if stock_ticker:
                 input_data = last_30_days_data.reshape(1, -1)
                 prediction = prediction_model.predict(input_data)[0]
                 probabilities = prediction_model.predict_proba(input_data)[0]
+
                 st.subheader("🔮 Stock Price Prediction")
                 st.write(f"Predicted Closing Price: ${prediction:.2f}")
                 st.write(f"**Buy Probability:** {probabilities[0]:.2f}")
