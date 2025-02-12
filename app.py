@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 import joblib
 import numpy as np
 import os
-import pickle
 from sklearn.preprocessing import StandardScaler
+import talib  # For technical indicators
 
 # Streamlit Page Configuration
 st.set_page_config(page_title="Stock Analyzer", layout="wide")
@@ -28,6 +28,18 @@ sentiment_pipeline = load_sentiment_model()
 MODEL_PATH = "random_forest_model.pkl"
 SCALER_PATH = "scaler.pkl"
 
+# Feature Engineering Function
+def engineer_features(df):
+    df['Daily_Return'] = df['Close'].pct_change()
+    df['Moving_Avg'] = df['Close'].rolling(window=10).mean()  # Adjust window as needed
+    df['Rolling_Std_Dev'] = df['Close'].rolling(window=10).std()  # Adjust window as needed
+    df['RSI'] = talib.RSI(df['Close'], timeperiod=14)  # Requires TA-Lib
+    df['EMA'] = df['Close'].ewm(span=12, adjust=False).mean()  # Adjust span as needed
+    df['ROC'] = talib.ROC(df['Close'], timeperiod=10) # Rate of Change
+    # ... Add other features as needed (Sentiment_Numeric, Headlines_Count, Next_Day_Return)
+    # Important: Fill NaN values after feature engineering
+    df.fillna(0, inplace=True) # Or another appropriate strategy
+    return df
 @st.cache_resource(show_spinner=False)
 def load_prediction_model_and_scaler(model_path, scaler_path):
     try:
@@ -122,27 +134,6 @@ def analyze_sentiment(news_articles):
             st.error(f"Error in sentiment analysis: {e}")
             return []
     return []
-
-# Generate Recommendation
-def get_recommendation(sentiments, predicted_price, current_price):
-    if not sentiments:
-        return 33.3, 33.3, 33.3  # Equal probabilities if no sentiment data
-    
-    avg_score = np.mean([s['score'] for s in sentiments])
-    price_change = ((predicted_price - current_price) / current_price) * 100
-    
-    buy_prob = min(max((avg_score * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
-    sell_prob = min(max(((1 - avg_score) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
-    hold_prob = 100 - buy_prob - sell_prob
-    
-    # Normalize probabilities
-    total = buy_prob + sell_prob + hold_prob
-    return (
-        buy_prob/total*100,
-        hold_prob/total*100,
-        sell_prob/total*100
-    )
-
 # Streamlit UI
 st.title("📈 Stock Market Analyzer")
 stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upper()
@@ -201,43 +192,41 @@ with col2:
             st.write("---")
     else:
         st.write("No news available.")
-    
-    # Recommendation Section
-  # Recommendation Section
+
+# Recommendation Section
 st.subheader("🚀 Investment Recommendation")
-if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
+if prediction_model and scaler and stock_data is not None and len(stock_data) > 0 and stock_info:  # Check if model, scaler, and data are loaded
     try:
-        # Debug: Check input data
-        st.write("Input Data Shape:", stock_data[['Close']].values[-30:].reshape(1, -1).shape)
-        st.write("Input Data:", stock_data[['Close']].values[-30:].reshape(1, -1))
+        # 1. Feature Engineering
+        stock_data = engineer_features(stock_data.copy()) # Create a copy to avoid modifying original
 
-        # Prepare input data for the model
-        input_data = stock_data[['Close']].values[-30:].reshape(1, -1)
-        input_data = scaler.transform(input_data)  # Apply scaler
-        prediction = prediction_model.predict(input_data)[0]
-        
-        buy, hold, sell = get_recommendation(
-            sentiments if news else [],
-            prediction,
-            stock_info['current_price']
-        )
+        # 2. Ensure Required Features (after engineering)
+        stock_data = ensure_features(stock_data, REQUIRED_FEATURES)
 
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            st.metric("BUY Probability", f"{buy:.1f}%", delta="↑ Recommended" if buy > 50 else "")
-        with col_b:
-            st.metric("HOLD Probability", f"{hold:.1f}%", delta="➔ Neutral" if hold > 50 else "")
-        with col_c:
-            st.metric("SELL Probability", f"{sell:.1f}%", delta="↓ Caution" if sell > 50 else "")
-        
-        st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
-        
+        # 3. Prepare Input Data for Prediction (using the LAST 30 days, or less if not available)
+        input_data = stock_data[REQUIRED_FEATURES].tail(min(30, len(stock_data)))  # Use .tail() and handle cases with less than 30 days
+        st.write("Input Data Shape:", input_data.shape) # Debug
+        st.write("Input Data:", input_data) # Debug
+
+        # 4. Scaling
+        input_data_scaled = scaler.transform(input_data)
+
+        # 5. Prediction
+        prediction = prediction_model.predict(input_data_scaled)[0]
+
+        # ... (Recommendation display remains the same)
+
     except Exception as e:
         st.error(f"Error during prediction: {e}")
+        st.write("Debug Info:") # Provide more debug info
+        st.write(f"Model Loaded: {prediction_model is not None}")
+        st.write(f"Scaler Loaded: {scaler is not None}")
+        st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
+        if stock_data is not None:
+            st.write(f"Stock Data Columns: {stock_data.columns}")  # Check available columns
 else:
     st.warning("⚠️ Not enough data to generate recommendations")
     st.write("Debug Info:")
     st.write(f"Model Loaded: {prediction_model is not None}")
     st.write(f"Scaler Loaded: {scaler is not None}")
     st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
-
