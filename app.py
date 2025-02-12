@@ -17,10 +17,14 @@ st.set_page_config(page_title="Stock Analyzer", layout="wide")
 # Load Sentiment Analysis Model
 @st.cache_resource(show_spinner=False)
 def load_sentiment_model():
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification
-    tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone")
-    model = AutoModelForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone")
-    return pipeline("text-classification", model=model, tokenizer=tokenizer)
+    try:
+        from transformers import AutoTokenizer, AutoModelForSequenceClassification
+        tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone")
+        model = AutoModelForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone")
+        return pipeline("text-classification", model=model, tokenizer=tokenizer)
+    except Exception as e:
+        st.error(f"Error loading sentiment model: {e}")
+        return None
 
 sentiment_pipeline = load_sentiment_model()
 
@@ -107,7 +111,7 @@ def fetch_news(stock_ticker):
 
 # Perform Sentiment Analysis with Score Mapping
 def analyze_sentiment(news_articles):
-    if news_articles:
+    if news_articles and sentiment_pipeline:
         try:
             sentiments = sentiment_pipeline(news_articles)
             for sentiment in sentiments:
