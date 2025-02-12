@@ -4,41 +4,36 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import TfidfVectorizer
-from newsapi import NewsApiClient
+from GoogleNews import GoogleNews
 
 # -----------------------------------------
 # Load the trained Random Forest model
 # -----------------------------------------
-model_path = 'random_forest_model.pkl'
+model_path = '/mnt/data/random_forest_model.pkl'
 model = joblib.load(model_path)
 
 # -----------------------------------------
 # Set up (or load) the TF-IDF Vectorizer
 # -----------------------------------------
 # NOTE: For production, use the vectorizer that was used during model training.
-vectorizer = TfidfVectorizer()  # Replace with your pre-fitted vectorizer if available
+# If you have a pre-fitted vectorizer saved, load it instead.
+vectorizer = TfidfVectorizer()  # Replace with your actual vectorizer if available
 
 # -----------------------------------------
-# Initialize NewsAPI Client for real-time news fetching
-# -----------------------------------------
-# Replace 'YOUR_NEWSAPI_KEY' with your actual NewsAPI key.
-NEWSAPI_KEY = "YOUR_NEWSAPI_KEY"  # <-- INSERT YOUR API KEY HERE
-newsapi = NewsApiClient(api_key=NEWSAPI_KEY)
-
-# -----------------------------------------
-# Function to fetch real-time financial news for a given stock ticker
+# Function to fetch real-time financial news using Google News
 # -----------------------------------------
 def fetch_financial_news(stock):
-    # Construct a query to search for news articles related to the stock.
-    # You can adjust the query as needed (e.g., adding keywords like 'financial' or 'market').
-    query = f"{stock} stock"
-    response = newsapi.get_everything(q=query,
-                                      language='en',
-                                      sort_by='publishedAt',
-                                      page_size=5)  # Fetch the top 5 recent articles
-    articles = response.get("articles", [])
-    headlines = [article["title"] for article in articles if article.get("title")]
-    return headlines
+    try:
+        googlenews = GoogleNews(lang='en', period='1d')  # Fetch news from the last day
+        query = f"{stock} stock"
+        googlenews.search(query)
+        results = googlenews.result()
+        # Extract headlines from the results (each result is a dictionary)
+        headlines = [article['title'] for article in results if 'title' in article]
+        return headlines
+    except Exception as e:
+        st.error(f"Error fetching news from Google News: {e}")
+        return []
 
 # -----------------------------------------
 # Configure the Streamlit app
@@ -52,6 +47,7 @@ st.markdown("## Analyze real-time financial sentiment on your favorite stocks")
 # -----------------------------------------
 # User Input Section
 # -----------------------------------------
+# Create two columns: one for the stock ticker input and one for the Analyze button (placed parallel)
 col1, col2 = st.columns([3, 1])
 with col1:
     stock_name = st.text_input(
@@ -73,7 +69,7 @@ if analyze_button:
 
         if news_articles:
             # Preprocess news articles using the TF-IDF vectorizer.
-            # If you have a pre-fitted vectorizer, use vectorizer.transform() instead of fit_transform().
+            # If you have a pre-fitted vectorizer from training, replace fit_transform() with transform().
             news_features = vectorizer.fit_transform(news_articles)
 
             # Predict sentiment scores using the trained Random Forest model
@@ -126,6 +122,6 @@ if analyze_button:
             ax.set_xticklabels([f"Article {i+1}" for i in x])
             st.pyplot(fig)
         else:
-            st.error("No financial news found for this stock.")
+            st.error("No financial news found for this stock or an error occurred while fetching news.")
     else:
         st.warning("Please enter a stock ticker.")
