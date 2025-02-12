@@ -6,10 +6,12 @@ import matplotlib.pyplot as plt
 import feedparser
 import joblib
 import ta
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from sklearn.preprocessing import StandardScaler
 from transformers import pipeline
 import warnings
+from pytz import timezone
+from pandas.tseries.holiday import USFederalHolidayCalendar
 
 # Configuration
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -37,6 +39,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Helper Functions
+def get_current_date():
+    """Get current date in UTC timezone"""
+    return datetime.now(timezone('UTC')).date()
+
+def is_trading_day(date):
+    """Check if a date is a US trading day"""
+    cal = USFederalHolidayCalendar()
+    holidays = cal.holidays(start='2020-01-01', end='2030-12-31').date
+    return date.weekday() < 5 and date not in holidays
+
+def validate_ticker(ticker):
+    """Basic ticker validation"""
+    if len(ticker) < 1 or len(ticker) > 5:
+        return False
+    return ticker.isalpha()
+
+# Model Loading
 @st.cache_resource
 def load_models():
     """Load ML models with validation"""
@@ -54,12 +74,6 @@ def load_sentiment_analyzer():
     except Exception as e:
         st.error(f"Sentiment engine error: {str(e)}")
         return None
-
-def validate_ticker(ticker):
-    """Basic ticker validation"""
-    if len(ticker) < 1 or len(ticker) > 5:
-        return False
-    return ticker.isalpha()
 
 # Data Processing
 def engineer_features(df):
@@ -115,12 +129,19 @@ col1, col2 = st.columns(2)
 with col1:
     ticker = st.text_input("NASDAQ Ticker Symbol", "AAPL").upper().strip()
 with col2:
-    analysis_date = st.date_input("Analysis Date", datetime.today())
+    analysis_date = st.date_input("Analysis Date", get_current_date())
 
 # Date Validation
-if analysis_date > datetime.today():
+if analysis_date > get_current_date():
     st.error("Future date selection not permitted")
     st.stop()
+
+if analysis_date < get_current_date() - timedelta(days=5*365):
+    st.error("Maximum historical data range is 5 years")
+    st.stop()
+
+if not is_trading_day(analysis_date):
+    st.warning("Selected date is not a trading day. Results may be limited.")
 
 # Core Processing
 model, scaler = load_models()
