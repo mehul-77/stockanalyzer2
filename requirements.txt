@@ -1,16 +1,14 @@
-streamlit==1.35.0
-pandas==2.2.2
-yfinance==0.2.37
-transformers==4.40.0
-torch==2.3.0+cpu
-sentencepiece==0.2.0
-protobuf==4.25.3
-feedparser==6.0.11
-matplotlib==3.8.3
-joblib==1.4.2
-scikit-learn==1.6.0
-numpy==1.26.4
-scipy==1.15.1
-ta==0.11.0  # Replace talib-binary with ta
+streamlit>=1.35.0
+yfinance>=0.2.37
+pandas>=2.2.2
+numpy>=1.26.4
+scikit-learn>=1.6.0
+transformers>=4.40.0
+ta>=0.11.0
+matplotlib>=3.8.3
+feedparser>=6.0.11
+joblib>=1.4.2
+pytz>=2023.3
+
 
 --find-links https://download.pytorch.org/whl/torch_stable.html
