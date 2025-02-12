@@ -9,7 +9,7 @@ from newsapi import NewsApiClient
 # -----------------------------------------
 # Load the trained Random Forest model
 # -----------------------------------------
-model_path = '/mnt/data/random_forest_model.pkl'
+model_path = 'random_forest_model.pkl'
 model = joblib.load(model_path)
 
 # -----------------------------------------
