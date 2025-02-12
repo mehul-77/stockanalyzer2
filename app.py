@@ -167,6 +167,26 @@ def get_recommendation(sentiments, predicted_price, current_price):
         sell_prob / total * 100
     )
 
+# Interpret prediction result
+def interpret_prediction(score):
+    if score > 0.6:
+        return "📈 Positive Sentiment"
+    elif score < 0.4:
+        return "📉 Negative Sentiment"
+    else:
+        return "⚖️ Neutral Sentiment"
+
+# Predict stock sentiment using Random Forest
+def predict_stock_sentiment_rf(data, model, scaler):
+    """Predict stock sentiment using the Random Forest model."""
+    try:
+        processed_data = scaler.transform(data)
+        prediction = model.predict(processed_data)[0]
+        return interpret_prediction(prediction)
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
+        return "Error: Unable to predict sentiment"
+
 # Streamlit UI
 st.title("📈 Stock Market Analyzer")
 
@@ -267,6 +287,12 @@ if prediction_model and scaler and stock_data is not None and len(stock_data) > 
             st.metric("SELL Probability", f"{sell:.1f}%", delta="↓ Caution" if sell > 50 else "")
 
         st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
+
+        # Sentiment Score Display
+        sentiment_score = np.mean([s['score'] for s in sentiments]) if sentiments else 0.5
+        st.subheader("📊 Sentiment Score")
+        st.write(f"**Sentiment Score:** {sentiment_score:.2f}")
+        st.write(f"**Interpretation:** {interpret_prediction(sentiment_score)}")
 
     except Exception as e:
         st.error("An error occurred while generating recommendations. Please try again later.")
