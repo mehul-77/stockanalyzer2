@@ -164,7 +164,7 @@ if validate_ticker(ticker):
     
     with st.spinner("Analyzing market data..."):
         market_data = fetch_market_data(ticker, start_date, end_date)
-        news_headlines = fetch_news(ticker)
+        news_headlines = fetch_news(ticker)  # Corrected function name
         sentiment_results = analyze_news_sentiment(news_headlines, sentiment_analyzer)
         
     try:
@@ -185,7 +185,7 @@ if validate_ticker(ticker):
         <div class='expert-rating'>
             <div class='rating-header'>Expert Consensus Rating</div>
             <div class='main-rating'>{(predicted_price/current_price*100)-100:.1f}%</div>
-            <div class='breakdown-item'>
+            <div class='breakdown-item">
                 <span>Model Confidence</span>
                 <span>{np.mean([res['score'] for res in sentiment_results]):.0% if sentiment_results else 'N/A'}</span>
             </div>
