@@ -133,7 +133,7 @@ if stock_ticker:
             st.error("❌ No market data found for this stock.")
 
     with col2:
-    st.subheader("📰 Latest News & Sentiment")
+        st.subheader("📰 Latest News & Sentiment")
     
     if news:
         sentiments = analyze_sentiment(news)
