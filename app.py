@@ -203,31 +203,41 @@ with col2:
         st.write("No news available.")
     
     # Recommendation Section
-    st.subheader("🚀 Investment Recommendation")
-    if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
-        try:
-            # Prepare input data for the model
-            input_data = stock_data[['Close']].values[-30:].reshape(1, -1)
-            input_data = scaler.transform(input_data)  # Apply scaler
-            prediction = prediction_model.predict(input_data)[0]
-            
-            buy, hold, sell = get_recommendation(
-                sentiments if news else [],
-                prediction,
-                stock_info['current_price']
-            )
+   st.subheader("🚀 Investment Recommendation")
+   if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
+     try:
+        # Debug: Check input data
+        st.write("Input Data Shape:", stock_data[['Close']].values[-30:].reshape(1, -1).shape)
+        st.write("Input Data:", stock_data[['Close']].values[-30:].reshape(1, -1))
 
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("BUY Probability", f"{buy:.1f}%", delta="↑ Recommended" if buy > 50 else "")
-            with col_b:
-                st.metric("HOLD Probability", f"{hold:.1f}%", delta="➔ Neutral" if hold > 50 else "")
-            with col_c:
-                st.metric("SELL Probability", f"{sell:.1f}%", delta="↓ Caution" if sell > 50 else "")
-            
-            st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
-            
-        except Exception as e:
-            st.error(f"Error during prediction: {e}")
+        # Prepare input data for the model
+        input_data = stock_data[['Close']].values[-30:].reshape(1, -1)
+        input_data = scaler.transform(input_data)  # Apply scaler
+        prediction = prediction_model.predict(input_data)[0]
+        
+        buy, hold, sell = get_recommendation(
+            sentiments if news else [],
+            prediction,
+            stock_info['current_price']
+        )
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("BUY Probability", f"{buy:.1f}%", delta="↑ Recommended" if buy > 50 else "")
+        with col_b:
+            st.metric("HOLD Probability", f"{hold:.1f}%", delta="➔ Neutral" if hold > 50 else "")
+        with col_c:
+            st.metric("SELL Probability", f"{sell:.1f}%", delta="↓ Caution" if sell > 50 else "")
+        
+        st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
+        
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
     else:
         st.warning("⚠️ Not enough data to generate recommendations")
+        st.write("Debug Info:")
+        st.write(f"Model Loaded: {prediction_model is not None}")
+        st.write(f"Scaler Loaded: {scaler is not None}")
+        st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
+else:
+    st.warning("⚠️ Not enough data to generate recommendations")
