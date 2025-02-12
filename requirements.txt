@@ -10,4 +10,5 @@ matplotlib==3.8.3
 joblib
 scikit-learn==1.6.0
 setuptools>=68.0.0
+newsapi-python
 --find-links https://download.pytorch.org/whl/torch_stable.html
