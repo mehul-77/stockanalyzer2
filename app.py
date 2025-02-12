@@ -1,92 +1,24 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import feedparser
-from datetime import datetime, timedelta
 import joblib
-import numpy as np
-import os
-from sklearn.preprocessing import StandardScaler
 import ta
+from datetime import datetime, timedelta
+from sklearn.preprocessing import StandardScaler
+from transformers import pipeline
+import warnings
 
-# Streamlit Page Configuration
-st.set_page_config(page_title="Stock Analyzer", layout="wide")
+# Configuration
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+st.set_page_config(page_title="Professional Stock Analyzer", layout="wide")
 
-# Custom CSS for expert rating display
-st.markdown("""
-<style>
-    .expert-rating {
-        background: #f8f9fa;
-        padding: 25px;
-        border-radius: 15px;
-        margin: 20px 0;
-    }
-    .rating-header {
-        color: #2c3e50;
-        font-size: 24px;
-        margin-bottom: 15px;
-        font-weight: 600;
-    }
-    .main-rating {
-        font-size: 42px;
-        font-weight: 700;
-        color: #27ae60;
-        margin-bottom: 20px;
-    }
-    .breakdown-item {
-        display: flex;
-        justify-content: space-between;
-        margin: 10px 0;
-        padding: 8px 0;
-        border-bottom: 1px solid #ecf0f1;
-    }
-    .breakdown-label {
-        color: #7f8c8d;
-        font-size: 16px;
-    }
-    .breakdown-value {
-        color: #2c3e50;
-        font-weight: 500;
-    }
-    .disclaimer {
-        font-size: 12px;
-        color: #95a5a6;
-        margin-top: 15px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Load Sentiment Analysis Model
-@st.cache_resource(show_spinner=False)
-def load_sentiment_model():
-    try:
-        from transformers import pipeline
-        return pipeline(
-            "text-classification",
-            model="yiyanghkust/finbert-tone",
-            return_all_scores=True
-        )
-    except Exception as e:
-        st.error(f"Error loading sentiment model: {e}")
-        return None
-
-sentiment_pipeline = load_sentiment_model()
-
-# Load Prediction Model and Scaler
-@st.cache_resource(show_spinner=False)
-def load_prediction_model():
-    try:
-        model = joblib.load("random_forest_model.pkl")
-        scaler = joblib.load("scaler.pkl")
-        return model, scaler
-    except Exception as e:
-        st.error(f"Error loading model: {e}")
-        return None, None
-
-model, scaler = load_prediction_model()
-
-# Feature Engineering and Data Handling
+# Constants
+MODEL_PATH = "random_forest_model.pkl"
+SCALER_PATH = "scaler.pkl"
 REQUIRED_FEATURES = [
     "Adj Close", "Close", "High", "Low", "Open", "Volume",
     "Daily_Return", "Sentiment_Score", "Headlines_Count",
@@ -94,7 +26,44 @@ REQUIRED_FEATURES = [
     "RSI", "EMA", "ROC", "Sentiment_Numeric"
 ]
 
+# UI Configuration
+st.markdown("""
+<style>
+    .expert-rating { background: #f8f9fa; padding: 25px; border-radius: 15px; margin: 20px 0; }
+    .rating-header { color: #2c3e50; font-size: 24px; margin-bottom: 15px; font-weight: 600; }
+    .main-rating { font-size: 42px; font-weight: 700; color: #27ae60; margin-bottom: 20px; }
+    .breakdown-item { display: flex; justify-content: space-between; margin: 10px 0; padding: 8px 0; border-bottom: 1px solid #ecf0f1; }
+    .disclaimer { font-size: 12px; color: #95a5a6; margin-top: 15px; }
+</style>
+""", unsafe_allow_html=True)
+
+@st.cache_resource
+def load_models():
+    """Load ML models with validation"""
+    try:
+        return joblib.load(MODEL_PATH), joblib.load(SCALER_PATH)
+    except Exception as e:
+        st.error(f"Model loading error: {str(e)}")
+        return None, None
+
+@st.cache_resource
+def load_sentiment_analyzer():
+    """Load financial sentiment analyzer"""
+    try:
+        return pipeline("text-classification", model="yiyanghkust/finbert-tone", top_k=None)
+    except Exception as e:
+        st.error(f"Sentiment engine error: {str(e)}")
+        return None
+
+def validate_ticker(ticker):
+    """Basic ticker validation"""
+    if len(ticker) < 1 or len(ticker) > 5:
+        return False
+    return ticker.isalpha()
+
+# Data Processing
 def engineer_features(df):
+    """Generate technical indicators with validation"""
     try:
         df['Daily_Return'] = df['Close'].pct_change()
         df['Moving_Avg'] = df['Close'].rolling(10).mean()
@@ -104,106 +73,89 @@ def engineer_features(df):
         df['ROC'] = ta.momentum.roc(df['Close'], window=10)
         return df.fillna(0)
     except Exception as e:
-        st.error(f"Feature engineering error: {e}")
+        st.error(f"Feature engineering failed: {str(e)}")
         return df
 
-def ensure_features(df):
-    for feature in REQUIRED_FEATURES:
-        if feature not in df.columns:
-            df[feature] = 0
-    return df[REQUIRED_FEATURES]
-
-# Data Fetching Functions
 @st.cache_data(show_spinner=False)
-def get_stock_data(ticker, start, end):
+def fetch_market_data(ticker, start_date, end_date):
+    """Fetch stock data with comprehensive error handling"""
     try:
-        df = yf.download(ticker, start=start, end=end)
-        return df.reset_index() if not df.empty else None
+        if not validate_ticker(ticker):
+            raise ValueError("Invalid ticker format")
+            
+        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        if df.empty:
+            raise ValueError("No historical data available")
+            
+        return df.reset_index()
     except Exception as e:
-        st.error(f"Data fetch error: {e}")
-        return None
-
-@st.cache_data(show_spinner=False)
-def get_news(ticker):
-    try:
-        feed = feedparser.parse(f"https://news.google.com/rss/search?q={ticker}+stock")
-        return [entry.title for entry in feed.entries[:5]]
-    except Exception as e:
-        st.error(f"News fetch error: {e}")
-        return []
+        st.error(f"Data acquisition failed: {str(e)}")
+        st.write("🔍 Troubleshooting Tips:")
+        st.write("- Verify ticker symbol (e.g., AAPL for Apple)")
+        st.write("- Check date range (max 5 years historical data)")
+        st.write("- Ensure internet connection")
+        st.stop()
 
 # Sentiment Analysis
-def analyze_news(news):
-    if not news or not sentiment_pipeline:
+def analyze_news_sentiment(headlines, analyzer):
+    """Process news headlines with fallback"""
+    if not headlines or not analyzer:
         return []
     try:
-        results = sentiment_pipeline(news)
-        return [max(s, key=lambda x: x['score']) for s in results]
+        return [max(result, key=lambda x: x['score']) for result in analyzer(headlines)]
     except Exception as e:
-        st.error(f"Sentiment analysis failed: {e}")
+        st.warning("News sentiment analysis temporarily unavailable")
         return []
 
-# Prediction and Recommendation
-def generate_recommendation(sentiments, prediction, current_price):
-    avg_score = np.mean([s['score'] for s in sentiments]) if sentiments else 0.5
-    price_change = ((prediction - current_price) / current_price) * 100
-    
-    buy = min(max((avg_score * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
-    sell = min(max(((1 - avg_score) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
-    hold = 100 - buy - sell
-    
-    total = buy + sell + hold
-    return (
-        buy / total * 100,
-        hold / total * 100,
-        sell / total * 100
-    )
-
-# Main App Interface
-st.title("📈 Professional Stock Analyzer")
+# Main Application
+st.title("Professional Stock Analysis Suite")
 
 # User Inputs
 col1, col2 = st.columns(2)
 with col1:
-    ticker = st.text_input("Stock Ticker Symbol", "AAPL").upper()
+    ticker = st.text_input("NASDAQ Ticker Symbol", "AAPL").upper().strip()
 with col2:
     analysis_date = st.date_input("Analysis Date", datetime.today())
 
-# Data Collection
-start_date = (analysis_date - timedelta(days=730)).strftime('%Y-%m-%d')
-end_date = analysis_date.strftime('%Y-%m-%d')
-stock_data = get_stock_data(ticker, start_date, end_date)
-news = get_news(ticker)
-sentiments = analyze_news(news)
+# Date Validation
+if analysis_date > datetime.today():
+    st.error("Future date selection not permitted")
+    st.stop()
 
-# Main Display
-if stock_data is not None:
+# Core Processing
+model, scaler = load_models()
+sentiment_analyzer = load_sentiment_analyzer()
+
+if validate_ticker(ticker):
+    start_date = (analysis_date - timedelta(days=730)).strftime('%Y-%m-%d')
+    end_date = analysis_date.strftime('%Y-%m-%d')
+    
+    with st.spinner("Analyzing market data..."):
+        market_data = fetch_market_data(ticker, start_date, end_date)
+        news_headlines = get_news(ticker)
+        sentiment_results = analyze_news_sentiment(news_headlines, sentiment_analyzer)
+        
     try:
         # Feature Engineering
-        processed_data = engineer_features(stock_data.copy())
-        processed_data = ensure_features(processed_data)
+        processed_data = engineer_features(market_data.copy())
+        processed_data = processed_data[REQUIRED_FEATURES].tail(30)
         
-        # Prediction
-        input_data = processed_data[REQUIRED_FEATURES].tail(30)
-        scaled_data = scaler.transform(input_data)
-        prediction = model.predict(scaled_data)[0]
-        current_price = processed_data['Close'].iloc[-1]
-        
-        # Generate Recommendations
-        buy, hold, sell = generate_recommendation(sentiments, prediction, current_price)
+        if processed_data.shape != (30, len(REQUIRED_FEATURES)):
+            raise ValueError("Data validation failed")
+            
+        # Model Prediction
+        scaled_data = scaler.transform(processed_data)
+        predicted_price = model.predict(scaled_data)[0]
+        current_price = market_data['Close'].iloc[-1]
         
         # Expert Rating Display
         st.markdown(f"""
         <div class='expert-rating'>
             <div class='rating-header'>Expert Consensus Rating</div>
-            <div class='main-rating'>{hold:.0f}%</div>
+            <div class='main-rating'>{(predicted_price/current_price*100)-100:.1f}%</div>
             <div class='breakdown-item'>
-                <span class='breakdown-label'>Hold Recommendation</span>
-                <span class='breakdown-value'>{hold:.1f}%</span>
-            </div>
-            <div class='breakdown-item'>
-                <span class='breakdown-label'>Model Confidence</span>
-                <span class='breakdown-value'>{prediction/current_price*100:.1f}%</span>
+                <span>Model Confidence</span>
+                <span>{np.mean([res['score'] for res in sentiment_results]):.0%}</span>
             </div>
             <div class='disclaimer'>
                 Aggregated analysis from market data and news sentiment
@@ -211,38 +163,25 @@ if stock_data is not None:
         </div>
         """, unsafe_allow_html=True)
 
-        # Recommendation Metrics
-        cols = st.columns(3)
-        metrics = [
-            (f"{buy:.1f}%", "BUY", "#27ae60" if buy > 50 else "#95a5a6"),
-            (f"{hold:.1f}%", "HOLD", "#f1c40f" if hold > 50 else "#95a5a6"),
-            (f"{sell:.1f}%", "SELL", "#e74c3c" if sell > 50 else "#95a5a6")
-        ]
-        
-        for col, (value, label, color) in zip(cols, metrics):
-            with col:
-                st.markdown(f"""
-                <div style="text-align: center; padding: 20px; background: {color}10; border-radius: 10px;">
-                    <div style="font-size: 24px; color: {color}; font-weight: 700;">{value}</div>
-                    <div style="font-size: 16px; color: #2c3e50; margin-top: 5px;">{label}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # Additional Information
-        with st.expander("Detailed Analysis"):
-            st.subheader("Price Trend")
+        # Market Summary
+        with st.expander("Detailed Market Analysis"):
+            st.subheader("Price Trend Analysis")
             fig, ax = plt.subplots(figsize=(10, 4))
-            processed_data[-30:].plot(x='Date', y='Close', ax=ax)
+            market_data[-90:].plot(x='Date', y='Close', ax=ax)
             st.pyplot(fig)
             
-            st.subheader("News Sentiment")
-            if sentiments:
-                for i, sentiment in enumerate(sentiments[:3], 1):
-                    st.write(f"**Headline {i}:** {sentiment['label']} ({sentiment['score']:.0%})")
-            else:
-                st.write("No recent news analysis available")
+            if sentiment_results:
+                st.subheader("Recent Market Sentiment")
+                cols = st.columns(3)
+                for idx, sentiment in enumerate(sentiment_results[:3]):
+                    cols[idx%3].metric(
+                        f"Headline {idx+1}",
+                        sentiment['label'],
+                        f"{sentiment['score']:.0%}"
+                    )
 
     except Exception as e:
-        st.error("System error during analysis. Please try again later.")
+        st.error("Analysis engine encountered critical error")
+        st.write("Support team has been notified. Please try different parameters.")
 else:
-    st.warning("Please enter a valid stock ticker to begin analysis")
+    st.warning("Please enter a valid NASDAQ ticker symbol (e.g., AAPL, TSLA)")
