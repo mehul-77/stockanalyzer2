@@ -3,21 +3,16 @@ import pandas as pd
 import numpy as np
 import joblib
 import matplotlib.pyplot as plt
-from sklearn.feature_extraction.text import TfidfVectorizer
 from GoogleNews import GoogleNews
 
 # -----------------------------------------
-# Load the trained Random Forest model
+# Load the trained Random Forest model and pre-fitted TF-IDF vectorizer
 # -----------------------------------------
-model_path = 'random_forest_model.pkl'
-model = joblib.load(model_path)
+model_path = '/mnt/data/random_forest_model.pkl'
+vectorizer_path = '/mnt/data/tfidf_vectorizer.pkl'  # Update this path as needed
 
-# -----------------------------------------
-# Set up (or load) the TF-IDF Vectorizer
-# -----------------------------------------
-# NOTE: For production, use the vectorizer that was used during model training.
-# If you have a pre-fitted vectorizer saved, load it instead.
-vectorizer = TfidfVectorizer()  # Replace with your actual vectorizer if available
+model = joblib.load(model_path)
+vectorizer = joblib.load(vectorizer_path)
 
 # -----------------------------------------
 # Function to fetch real-time financial news using Google News
@@ -45,9 +40,8 @@ st.title("📊 Stock Sentiment Analyzer")
 st.markdown("## Analyze real-time financial sentiment on your favorite stocks")
 
 # -----------------------------------------
-# User Input Section
+# User Input Section (with parallel layout)
 # -----------------------------------------
-# Create two columns: one for the stock ticker input and one for the Analyze button (placed parallel)
 col1, col2 = st.columns([3, 1])
 with col1:
     stock_name = st.text_input(
@@ -66,11 +60,11 @@ if analyze_button:
     if stock_name:
         st.info(f"Fetching the latest financial news for **{stock_name}**...")
         news_articles = fetch_financial_news(stock_name)
-
+        
         if news_articles:
-            # Preprocess news articles using the TF-IDF vectorizer.
-            # If you have a pre-fitted vectorizer from training, replace fit_transform() with transform().
-            news_features = vectorizer.fit_transform(news_articles)
+            # Use the pre-fitted vectorizer to transform the news articles.
+            # (Do NOT use fit_transform; use transform() so the features match what the model expects.)
+            news_features = vectorizer.transform(news_articles)
 
             # Predict sentiment scores using the trained Random Forest model
             predictions = model.predict(news_features)
