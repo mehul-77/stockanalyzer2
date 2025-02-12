@@ -25,13 +25,10 @@ sentiment_pipeline = load_sentiment_model()
 MODEL_PATH = "random_forest_model.pkl"
 
 @st.cache_resource(show_spinner=False)
-
 def load_prediction_model(model_path):
     try:
         if os.path.exists(model_path):
-            model = joblib.load(model_path)
-            st.success("✅ Prediction model loaded successfully!")
-            return model
+            return joblib.load(model_path)
         else:
             st.warning(f"⚠️ Prediction model file not found at: {model_path}")
             return None
@@ -39,9 +36,7 @@ def load_prediction_model(model_path):
         st.error(f"❌ Error loading prediction model: {e}")
         return None
 
-MODEL_PATH = "random_forest_model.pkl"
 prediction_model = load_prediction_model(MODEL_PATH)
-
 
 # Fetch Stock Data
 @st.cache_data(show_spinner=False)
@@ -156,8 +151,12 @@ if stock_ticker:
                 last_30_days_data = stock_data['Close'].values[-30:]
                 input_data = last_30_days_data.reshape(1, -1)
                 prediction = prediction_model.predict(input_data)[0]
+                probabilities = prediction_model.predict_proba(input_data)[0]
                 st.subheader("🔮 Stock Price Prediction")
                 st.write(f"Predicted Closing Price: ${prediction:.2f}")
+                st.write(f"**Buy Probability:** {probabilities[0]:.2f}")
+                st.write(f"**Hold Probability:** {probabilities[1]:.2f}")
+                st.write(f"**Sell Probability:** {probabilities[2]:.2f}")
             except Exception as e:
                 st.error(f"Error during prediction: {e}")
 else:
