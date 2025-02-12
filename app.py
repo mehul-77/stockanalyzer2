@@ -7,7 +7,226 @@ import streamlit as st
 # Dependency configuration
 REQUIREMENTS = {
     'torch': '2.0.1',
-    'transformers': '4.30.0',
+    'transformers': '4.30.0',# app.py
+import streamlit as st
+import yfinance as yf
+from datetime import datetime, timedelta
+import pandas as pd
+import matplotlib.pyplot as plt
+from google_news import get_google_news
+from textblob import TextBlob
+from prediction_RandomForest import (
+    ensure_features,
+    load_rf_model,
+    predict_stock_sentiment_rf,
+    REQUIRED_FEATURES
+)
+
+# Configure page
+st.set_page_config(
+    page_title="Live Financial Analytics",
+    page_icon="💹",
+    layout="wide"
+)
+
+# Custom CSS styling
+st.markdown("""
+<style>
+    .news-card {
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+        background: #ffffff;
+    }
+    .positive {border-left: 4px solid #4CAF50;}
+    .negative {border-left: 4px solid #f44336;}
+    .neutral {border-left: 4px solid #FFC107;}
+    .sentiment-bar {
+        height: 8px;
+        border-radius: 4px;
+        margin: 0.5rem 0;
+    }
+    .stock-header {
+        background: linear-gradient(90deg, #1a237e 0%, #0d47a1 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+def fetch_stock_data(ticker, period='1y'):
+    """Fetch live stock data from Yahoo Finance"""
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period=period)
+    
+    if hist.empty:
+        st.error(f"No data found for {ticker}")
+        return None
+    
+    # Calculate technical indicators
+    hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
+    hist['RSI'] = calculate_rsi(hist['Close'])
+    hist['Daily_Return'] = hist['Close'].pct_change()
+    hist.dropna(inplace=True)
+    return hist
+
+def calculate_rsi(prices, window=14):
+    """Calculate Relative Strength Index"""
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def analyze_news_sentiment(news_items):
+    """Perform sentiment analysis on news headlines"""
+    sentiments = []
+    for item in news_items:
+        analysis = TextBlob(item['title'])
+        sentiment = (analysis.sentiment.polarity + 1) / 2  # Normalize to 0-1
+        sentiments.append({
+            'title': item['title'],
+            'link': item['link'],
+            'date': item['date'],
+            'sentiment': sentiment,
+            'source': item['source']
+        })
+    return pd.DataFrame(sentiments)
+
+def display_news(news_df):
+    """Display news cards with sentiment visualization"""
+    st.subheader("📰 Latest Market News")
+    
+    for _, row in news_df.iterrows():
+        sentiment = row['sentiment']
+        sentiment_class = "neutral"
+        if sentiment > 0.6:
+            sentiment_class = "positive"
+        elif sentiment < 0.4:
+            sentiment_class = "negative"
+        
+        st.markdown(
+            f"""
+            <div class="news-card {sentiment_class}">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <small>{row['date']} • {row['source']}</small>
+                    <b>Sentiment: {sentiment:.2f}</b>
+                </div>
+                <h4>{row['title']}</h4>
+                <div class="sentiment-bar" style="width: {abs(sentiment-0.5)*200}%; 
+                    background: {'#4CAF50' if sentiment > 0.5 else '#f44336'}; 
+                    margin-left: {50 - abs(sentiment-0.5)*100}%">
+                </div>
+                <a href="{row['link']}" target="_blank" style="color: #1a237e; text-decoration: none;">
+                    Read more →</a>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+
+def display_stock_header(ticker, hist):
+    """Show stock price header with key metrics"""
+    current_price = hist['Close'].iloc[-1]
+    prev_close = hist['Close'].iloc[-2]
+    change = current_price - prev_close
+    pct_change = (change / prev_close) * 100
+    
+    st.markdown(f"""
+        <div class="stock-header">
+            <div style="display: flex; justify-content: space-between;">
+                <div>
+                    <h1>{ticker}</h1>
+                    <h2>${current_price:.2f}</h2>
+                </div>
+                <div style="text-align: right;">
+                    <h3>{'↑' if change >= 0 else '↓'} ${abs(change):.2f}</h3>
+                    <h3>{pct_change:+.2f}%</h3>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+def main():
+    st.title("📊 Live Financial Analytics Dashboard")
+    
+    # User input
+    with st.form("ticker_input"):
+        col1, col2 = st.columns(2)
+        with col1:
+            ticker = st.text_input("Enter Stock Ticker", "AAPL").upper()
+        with col2:
+            period = st.selectbox(
+                "Analysis Period",
+                ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y"],
+                index=5
+            )
+        analyze_clicked = st.form_submit_button("Analyze")
+    
+    if analyze_clicked:
+        try:
+            with st.spinner("Fetching live market data and news..."):
+                # Fetch live data
+                hist = fetch_stock_data(ticker, period)
+                news_items = get_google_news(ticker)
+                news_df = analyze_news_sentiment(news_items)
+                
+                # Prepare data for ML model
+                ml_data = hist.copy()
+                ml_data = ensure_features(ml_data, REQUIRED_FEATURES)
+                
+                # Display results
+                st.success("Analysis complete!")
+                
+                # Stock price header
+                display_stock_header(ticker, hist)
+                
+                # Main columns
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    # Price chart
+                    st.subheader("Price Movement")
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    ax.plot(hist.index, hist['Close'], label='Closing Price')
+                    ax.plot(hist.index, hist['SMA_20'], label='20-day SMA')
+                    ax.set_ylabel('Price')
+                    ax.legend()
+                    st.pyplot(fig)
+                    
+                    # Technical indicators
+                    st.subheader("Technical Analysis")
+                    col1a, col1b, col1c = st.columns(3)
+                    with col1a:
+                        st.metric("RSI", f"{hist['RSI'].iloc[-1]:.2f}")
+                    with col1b:
+                        st.metric("Daily Return", f"{hist['Daily_Return'].iloc[-1]:.2%}")
+                    with col1c:
+                        st.metric("Volume", f"{hist['Volume'].iloc[-1]:,}")
+                
+                with col2:
+                    # AI Prediction
+                    st.subheader("AI Prediction")
+                    prediction = predict_stock_sentiment_rf(ml_data.tail(1))
+                    prediction_color = "#4CAF50" if "Positive" in prediction else "#f44336" if "Negative" in prediction else "#FFC107"
+                    st.markdown(
+                        f"<h2 style='color: {prediction_color}; text-align: center;'>{prediction}</h2>",
+                        unsafe_allow_html=True
+                    )
+                    
+                    # News Section
+                    if not news_df.empty:
+                        display_news(news_df.head(5))
+                    else:
+                        st.warning("No recent news found")
+        
+        except Exception as e:
+            st.error(f"Analysis failed: {str(e)}")
+
+if __name__ == "__main__":
+    main()
     'streamlit': '1.23.1',
     'numpy': '1.24.3',
     'pandas': '2.0.3',
