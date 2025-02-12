@@ -1,213 +1,120 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import matplotlib.pyplot as plt
-import feedparser
-from transformers import pipeline
-from datetime import datetime, timedelta
-import joblib
 import numpy as np
-import os
+import joblib
+import plotly.graph_objects as go
+from GoogleNews import GoogleNews
+from transformers import pipeline
 
-st.set_page_config(page_title="Stock Analyzer", layout="wide")
-
-# Load Sentiment Analysis Model
+# ------------------------------
+# Load Random Forest Model & Scaler
+# ------------------------------
 @st.cache_resource(show_spinner=False)
-def load_sentiment_model():
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification
-    tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone")
-    model = AutoModelForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone")
-    return pipeline("text-classification", model=model, tokenizer=tokenizer)
-
-sentiment_pipeline = load_sentiment_model()
-
-# Load Prediction Model
-MODEL_PATH = "random_forest_model.pkl"
-
-@st.cache_resource(show_spinner=False)
-def load_prediction_model(model_path):
+def load_model_and_scaler():
     try:
-        if os.path.exists(model_path):
-            model = joblib.load(model_path)
-            st.success("✅ Prediction model loaded successfully!")
-            return model
+        model = joblib.load("random_forest_model.pkl")
+        scaler = joblib.load("scaler.pkl")
+        return model, scaler
+    except Exception as e:
+        st.error("Error loading model or scaler: " + str(e))
+        return None, None
+
+model, scaler = load_model_and_scaler()
+
+# ------------------------------
+# Load FinBERT Sentiment Pipeline
+# ------------------------------
+@st.cache_resource(show_spinner=False)
+def load_sentiment_pipeline():
+    try:
+        sentiment_pipe = pipeline(
+            "text-classification", 
+            model="yiyanghkust/finbert-tone", 
+            return_all_scores=True
+        )
+        return sentiment_pipe
+    except Exception as e:
+        st.error("Error loading sentiment pipeline: " + str(e))
+        return None
+
+sentiment_pipe = load_sentiment_pipeline()
+
+# ------------------------------
+# Fetch Real-Time Stock Data using yfinance
+# ------------------------------
+def fetch_stock_data(symbol, period="6mo"):
+    stock = yf.Ticker(symbol)
+    df = stock.history(period=period)
+    df.reset_index(inplace=True)
+    return df
+
+# ------------------------------
+# Compute Technical Indicators
+# ------------------------------
+def compute_technical_indicators(df):
+    df["Daily_Return"] = df["Close"].pct_change()
+    df["Moving_Avg"] = df["Close"].rolling(window=14).mean()
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0).rolling(window=14).mean()
+    loss = (-delta).clip(lower=0).rolling(window=14).mean()
+    rs = gain / (loss + 1e-10)
+    df["RSI"] = 100 - (100 / (1 + rs))
+    df.fillna(method="bfill", inplace=True)
+    return df
+
+# ------------------------------
+# Fetch News Articles using GoogleNews
+# ------------------------------
+def fetch_news(symbol):
+    googlenews = GoogleNews(lang='en', period='1d')
+    query = f"{symbol} stock"
+    googlenews.search(query)
+    results = googlenews.result()
+    headlines = [item["title"] for item in results][:5]
+    return headlines
+
+# ------------------------------
+# Analyze Sentiment for News Headlines using FinBERT
+# ------------------------------
+def analyze_sentiments(headlines):
+    scores = []
+    news_details = []
+    if sentiment_pipe is None:
+        return 0.5, []
+    for headline in headlines:
+        result = sentiment_pipe(headline)
+        # Take the label with the highest score from the first (and only) prediction set
+        best = max(result[0], key=lambda x: x["score"])
+        label = best["label"].lower()
+        if label == "positive":
+            score = 1.0
+        elif label == "neutral":
+            score = 0.5
         else:
-            st.warning(f"⚠️ Prediction model file not found at: {model_path}")
-            return None
-    except Exception as e:
-        st.error(f"❌ Error loading prediction model: {e}")
-        return None
+            score = 0.0
+        scores.append(score)
+        news_details.append({"headline": headline, "label": best["label"], "score": score})
+    avg_sentiment = np.mean(scores) if scores else 0.5
+    return avg_sentiment, news_details
 
-prediction_model = load_prediction_model(MODEL_PATH)
+# ------------------------------
+# Prepare Feature Vector for Prediction
+# ------------------------------
+def prepare_feature_vector(df, avg_sentiment, headlines_count):
+    # Use the latest available data from stock_df and combine with news features
+    latest = df.iloc[-1]
+    features = {
+        "Adj Close": latest["Close"],  # Assuming no separate Adj Close available
+        "Close": latest["Close"],
+        "High": latest["High"],
+        "Low": latest["Low"],
+        "Open": latest["Open"],
+        "Volume": latest["Volume"],
+        "Daily_Return": latest["Daily_Return"],
+        "Sentiment_Score": avg_sentiment,
+        "Headlines_Count": headlines_count,
+        "Next_Day_Return": 0,      # Placeholder (if unavailable)
+        "Moving_Avg": latest["Moving_Avg"],
+        "Rolling_Std_Dev": 0,      # Placeholder (if unavailable)\n        \"RSI\": latest[\"RSI\"],\n        \"EMA\": 0,           # Placeholder\n        \"ROC\": 0,           # Placeholder\n        \"Sentiment_Numeric\": avg_sentiment\n    }\n    feature_order = [\n        \"Adj Close\", \"Close\", \"High\", \"Low\", \"Open\", \"Volume\",\n        \"Daily_Return\", \"Sentiment_Score\", \"Headlines_Count\",\n        \"Next_Day_Return\", \"Moving_Avg\", \"Rolling_Std_Dev\",\n        \"RSI\", \"EMA\", \"ROC\", \"Sentiment_Numeric\"\n    ]\n    feature_vector = np.array([features[f] for f in feature_order]).reshape(1, -1)\n    return feature_vector\n\n# ------------------------------\n# Interpret Model Prediction (Assuming 3 classes: Buy, Hold, Sell)\n# ------------------------------\ndef interpret_prediction(probs):\n    buy_prob, hold_prob, sell_prob = probs\n    return buy_prob, hold_prob, sell_prob\n\n# ------------------------------\n# Streamlit UI Layout\n# ------------------------------\nst.title(\"NASDAQ Stock Analyzer and Predictor\")\n\nst.sidebar.header(\"Select NASDAQ Stock\")\nstock_symbol = st.sidebar.text_input(\"Enter NASDAQ Symbol (e.g., AAPL, MSFT, TSLA):\", \"AAPL\").upper()\n\nif st.sidebar.button(\"Analyze\"):\n    if not model or not scaler:\n        st.error(\"Model and scaler are not loaded properly.\")\n    else:\n        st.header(f\"Real-Time Analysis for {stock_symbol}\")\n        # Fetch and process stock data\n        stock_df = fetch_stock_data(stock_symbol, period=\"6mo\")\n        stock_df = compute_technical_indicators(stock_df)\n        \n        # Display interactive candlestick chart using Plotly\n        st.subheader(\"Stock Price Chart\")\n        fig = go.Figure(data=[go.Candlestick(x=stock_df[\"Date\"],\n                                             open=stock_df[\"Open\"],\n                                             high=stock_df[\"High\"],\n                                             low=stock_df[\"Low\"],\n                                             close=stock_df[\"Close\"])])\n        fig.update_layout(xaxis_rangeslider_visible=False)\n        st.plotly_chart(fig, use_container_width=True)\n        \n        # Fetch news and perform sentiment analysis\n        st.subheader(\"Latest News & Sentiment Analysis\")\n        headlines = fetch_news(stock_symbol)\n        if headlines:\n            st.write(\"**News Headlines:**\")\n            for hl in headlines:\n                st.markdown(f\"- {hl}\")\n            avg_sentiment, news_details = analyze_sentiments(headlines)\n            st.write(f\"**Average Sentiment Score:** {avg_sentiment:.2f}\")\n            for detail in news_details:\n                st.write(f\"**{detail['headline']}** - {detail['label']} (Score: {detail['score']})\")\n        else:\n            st.write(\"No news available.\")\n            avg_sentiment = 0.5\n        \n        # Prepare features and predict using the Random Forest model\n        feature_vector = prepare_feature_vector(stock_df, avg_sentiment, len(headlines))\n        scaled_features = scaler.transform(feature_vector)\n        prediction_probs = model.predict_proba(scaled_features)\n        if hasattr(prediction_probs, 'tolist'):\n            prediction_probs = prediction_probs.tolist()[0]\n        else:\n            prediction_probs = prediction_probs[0]\n        buy_prob, hold_prob, sell_prob = interpret_prediction(prediction_probs)\n        \n        # Display Expert Rating (Buy/Hold/Sell probabilities)\n        st.subheader(\"Expert Rating\")\n        col1, col2, col3 = st.columns(3)\n        col1.metric(\"Buy\", f\"{buy_prob * 100:.2f}%\")\n        col2.metric(\"Hold\", f\"{hold_prob * 100:.2f}%\")\n        col3.metric(\"Sell\", f\"{sell_prob * 100:.2f}%\")\n        \n        st.write(\"---\")\n        st.write(\"*Final recommendation based on expert rating probabilities.*\")\n"} 
 
-# Fetch Stock Data
-@st.cache_data(show_spinner=False)
-def fetch_stock_data(stock_ticker, start_date, end_date):
-    try:
-        stock_data = yf.download(stock_ticker, start=start_date, end=end_date, interval="1d")
-        if stock_data.empty:
-            return None
-        stock_data = stock_data.reset_index()
-        stock_data['Date'] = stock_data['Date'].astype(str)
-        return stock_data
-    except Exception as e:
-        st.error(f"Error fetching stock data: {e}")
-        return None
-
-# Fetch Current Stock Info
-@st.cache_data(show_spinner=False)
-def fetch_current_stock_info(stock_ticker):
-    try:
-        stock = yf.Ticker(stock_ticker)
-        stock_info = stock.history(period="1d")
-        if stock_info.empty:
-            return None
-        return {
-            "current_price": stock_info["Close"].iloc[-1],
-            "previous_close": stock_info["Close"].iloc[-2] if len(stock_info) > 1 else None,
-            "open": stock_info["Open"].iloc[-1],
-            "day_high": stock_info["High"].iloc[-1],
-            "day_low": stock_info["Low"].iloc[-1],
-            "volume": stock_info["Volume"].iloc[-1]
-        }
-    except Exception as e:
-        st.error(f"Error fetching current stock info: {e}")
-        return None
-
-# Fetch News Data
-@st.cache_data(show_spinner=False)
-def fetch_news(stock_ticker):
-    try:
-        rss_url = f"https://news.google.com/rss/search?q={stock_ticker}+stock&hl=en-IN&gl=IN&ceid=IN:en"
-        feed = feedparser.parse(rss_url)
-        return [entry.title for entry in feed.entries[:5]]
-    except Exception as e:
-        st.error(f"Error fetching news: {e}")
-        return []
-
-# Perform Sentiment Analysis with Score Mapping
-def analyze_sentiment(news_articles):
-    if news_articles:
-        try:
-            sentiments = sentiment_pipeline(news_articles)
-            # Map scores to custom values
-            for sentiment in sentiments:
-                if sentiment["label"] == "positive":
-                    sentiment["score"] = 1.0
-                elif sentiment["label"] == "neutral":
-                    sentiment["score"] = 0.5
-                elif sentiment["label"] == "negative":
-                    sentiment["score"] = 0.0
-            return sentiments
-        except Exception as e:
-            st.error(f"Error in sentiment analysis: {e}")
-            return []
-    return []
-
-# Generate Recommendation
-def get_recommendation(sentiments, predicted_price, current_price):
-    if not sentiments:
-        return 33.3, 33.3, 33.3  # Equal probabilities if no sentiment data
-    
-    avg_score = np.mean([s['score'] for s in sentiments])
-    price_change = ((predicted_price - current_price) / current_price) * 100
-    
-    buy_prob = min(max((avg_score * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
-    sell_prob = min(max(((1 - avg_score) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
-    hold_prob = 100 - buy_prob - sell_prob
-    
-    # Normalize probabilities
-    total = buy_prob + sell_prob + hold_prob
-    return (
-        buy_prob/total*100,
-        hold_prob/total*100,
-        sell_prob/total*100
-    )
-
-# Streamlit UI
-st.title("📈 Stock Market Analyzer")
-stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upper()
-date = st.date_input("Select Date for Analysis:", datetime.today())
-
-stock_data = None
-stock_info = None
-news = []
-
-if stock_ticker:
-    start_date = (date - timedelta(days=30)).strftime('%Y-%m-%d')
-    end_date = date.strftime('%Y-%m-%d')
-    stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
-    stock_info = fetch_current_stock_info(stock_ticker)
-    news = fetch_news(stock_ticker)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    if stock_data is not None and not stock_data.empty:
-        st.subheader("📈 Stock Price Trend")
-        fig, ax = plt.subplots()
-        ax.plot(stock_data['Date'], stock_data['Close'], marker='o', linestyle='-')
-        plt.xticks(rotation=45)
-        plt.xlabel("Date")
-        plt.ylabel("Closing Price (USD)")
-        plt.title(f"{stock_ticker} Closing Prices")
-        st.pyplot(fig)
-    else:
-        st.error("❌ No stock data available! Please check the ticker symbol.")
-
-    if stock_info:
-        st.subheader("📊 Current Stock Information")
-        st.write(f"**Current Price:** ${stock_info['current_price']:.2f}")
-        if stock_info['previous_close']:
-            st.write(f"**Previous Close:** ${stock_info['previous_close']:.2f}")
-        st.write(f"**Open:** ${stock_info['open']:.2f}")
-        st.write(f"**Day High:** ${stock_info['day_high']:.2f}")
-        st.write(f"**Day Low:** ${stock_info['day_low']:.2f}")
-        st.write(f"**Volume:** {int(stock_info['volume']):,}")
-    else:
-        st.error("❌ No market data found for this stock.")
-
-with col2:
-    st.subheader("📰 Latest News & Sentiment")
-    if news:
-        sentiments = analyze_sentiment(news)
-        for i, article in enumerate(news):
-            st.write(f"**News {i+1}:** {article}")
-            if sentiments and i < len(sentiments):
-                label = sentiments[i]['label'].capitalize()
-                score = sentiments[i]['score']
-                st.write(f"**Sentiment:** {label} (Score: {score:.1f})")
-            else:
-                st.write("Sentiment: Not Available")
-            st.write("---")
-    else:
-        st.write("No news available.")
-    
-    # Recommendation Section
-    st.subheader("🚀 Investment Recommendation")
-    if prediction_model and stock_data is not None and len(stock_data) >= 30 and stock_info:
-        try:
-            last_30_days_data = stock_data['Close'].values[-30:]
-            input_data = last_30_days_data.reshape(1, -1)
-            prediction = prediction_model.predict(input_data)[0]
-            
-            buy, hold, sell = get_recommendation(
-                sentiments if news else [],
-                prediction,
-                stock_info['current_price']
-            )
-
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("BUY Probability", f"{buy:.1f}%", delta="↑ Recommended" if buy > 50 else "")
-            with col_b:
-                st.metric("HOLD Probability", f"{hold:.1f}%", delta="➔ Neutral" if hold > 50 else "")
-            with col_c:
-                st.metric("SELL Probability", f"{sell:.1f}%", delta="↓ Caution" if sell > 50 else "")
-            
-            st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
-            
-        except Exception as e:
-            st.error(f"Error during prediction: {e}")
-    else:
-        st.warning("⚠️ Not enough data to generate recommendations")
