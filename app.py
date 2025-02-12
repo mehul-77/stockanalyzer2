@@ -12,6 +12,7 @@ from transformers import pipeline
 import warnings
 from pytz import timezone
 from pandas.tseries.holiday import USFederalHolidayCalendar
+import torch  # Added PyTorch dependency
 
 # Configuration
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -68,9 +69,14 @@ def load_models():
 
 @st.cache_resource
 def load_sentiment_analyzer():
-    """Load financial sentiment analyzer"""
+    """Load financial sentiment analyzer with PyTorch backend"""
     try:
-        return pipeline("text-classification", model="yiyanghkust/finbert-tone", top_k=None)
+        return pipeline(
+            "text-classification",
+            model="yiyanghkust/finbert-tone",
+            framework="pt",  # Explicitly use PyTorch
+            top_k=None
+        )
     except Exception as e:
         st.error(f"Sentiment engine error: {str(e)}")
         return None
@@ -79,13 +85,23 @@ def load_sentiment_analyzer():
 def engineer_features(df):
     """Generate technical indicators with validation"""
     try:
+        # Ensure numeric columns
+        numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+        
+        # Calculate features
         df['Daily_Return'] = df['Close'].pct_change()
-        df['Moving_Avg'] = df['Close'].rolling(10).mean()
-        df['Rolling_Std_Dev'] = df['Close'].rolling(10).std()
+        df['Moving_Avg'] = df['Close'].rolling(window=10).mean()
+        df['Rolling_Std_Dev'] = df['Close'].rolling(window=10).std()
         df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
         df['EMA'] = ta.trend.ema_indicator(df['Close'], window=12)
-        df['ROC'] = ta.momentum.roc(df['Close'], window=10)
-        return df.fillna(0)
+        df['ROC'] = ta.momentum.roc(df['Close'], timeperiod=10)
+        
+        # Fill missing values
+        df = df.fillna(0)
+        
+        # Ensure correct data types
+        return df.astype(np.float32)
     except Exception as e:
         st.error(f"Feature engineering failed: {str(e)}")
         return df
@@ -101,13 +117,14 @@ def fetch_market_data(ticker, start_date, end_date):
         if df.empty:
             raise ValueError("No historical data available")
             
+        # Ensure required columns exist
+        for col in ['Adj Close', 'Close', 'Open', 'High', 'Low', 'Volume']:
+            if col not in df.columns:
+                df[col] = df['Close']  # Fallback to Close price
+                
         return df.reset_index()
     except Exception as e:
         st.error(f"Data acquisition failed: {str(e)}")
-        st.write("🔍 Troubleshooting Tips:")
-        st.write("- Verify ticker symbol (e.g., AAPL for Apple)")
-        st.write("- Check date range (max 5 years historical data)")
-        st.write("- Ensure internet connection")
         st.stop()
 
 @st.cache_data(show_spinner=False)
@@ -163,66 +180,72 @@ if validate_ticker(ticker):
     end_date = analysis_date.strftime('%Y-%m-%d')
     
     with st.spinner("Analyzing market data..."):
-        market_data = fetch_market_data(ticker, start_date, end_date)
-        news_headlines = fetch_news(ticker)
-        sentiment_results = analyze_news_sentiment(news_headlines, sentiment_analyzer)
-        
-    try:
-        # Feature Engineering
-        processed_data = engineer_features(market_data.copy())
-        processed_data = processed_data[REQUIRED_FEATURES]
-        
-        # Data Validation
-        if len(processed_data) < 30:
-            st.error("Minimum 30 trading days of data required")
-            st.stop()
+        try:
+            market_data = fetch_market_data(ticker, start_date, end_date)
+            news_headlines = fetch_news(ticker)
+            sentiment_results = analyze_news_sentiment(news_headlines, sentiment_analyzer)
             
-        if processed_data.shape[1] != len(REQUIRED_FEATURES):
-            st.error("Feature dimension mismatch in processed data")
-            st.stop()
-
-        # Prepare input data
-        input_data = processed_data.tail(30).values.reshape(-1, len(REQUIRED_FEATURES))
-        scaled_data = scaler.transform(input_data)
-        
-        # Model Prediction
-        prediction = model.predict(scaled_data[-1].reshape(1, -1))[0]
-        current_price = market_data['Close'].iloc[-1]
-        
-        # Expert Rating Display
-        st.markdown(f"""
-        <div class='expert-rating'>
-            <div class='rating-header'>Expert Consensus Rating</div>
-            <div class='main-rating'>{(prediction/current_price*100)-100:.1f}%</div>
-            <div class='breakdown-item">
-                <span>Model Confidence</span>
-                <span>{np.mean([res['score'] for res in sentiment_results]):.0% if sentiment_results else 'N/A'}</span>
-            </div>
-            <div class='disclaimer'>
-                Aggregated analysis from market data and news sentiment
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Market Summary
-        with st.expander("Detailed Market Analysis"):
-            st.subheader("Price Trend Analysis")
-            fig, ax = plt.subplots(figsize=(10, 4))
-            market_data[-90:].plot(x='Date', y='Close', ax=ax)
-            st.pyplot(fig)
+            # Feature Engineering
+            processed_data = engineer_features(market_data.copy())
             
-            if sentiment_results:
-                st.subheader("Recent Market Sentiment")
-                cols = st.columns(3)
-                for idx, sentiment in enumerate(sentiment_results[:3]):
-                    cols[idx%3].metric(
-                        f"Headline {idx+1}",
-                        sentiment['label'],
-                        f"{sentiment['score']:.0%}"
-                    )
+            # Ensure required features
+            for feature in REQUIRED_FEATURES:
+                if feature not in processed_data.columns:
+                    processed_data[feature] = 0.0
+                    
+            processed_data = processed_data[REQUIRED_FEATURES]
+            
+            # Data Validation
+            if len(processed_data) < 30:
+                st.error("Minimum 30 trading days of data required")
+                st.stop()
+                
+            if processed_data.shape[1] != len(REQUIRED_FEATURES):
+                st.error(f"Feature dimension mismatch. Expected {len(REQUIRED_FEATURES)}, got {processed_data.shape[1]}")
+                st.stop()
 
-    except Exception as e:
-        st.error("Analysis engine encountered critical error")
-        st.write("Support team has been notified. Please try different parameters.")
+            # Prepare input data
+            input_data = processed_data.tail(30).values.reshape(-1, len(REQUIRED_FEATURES))
+            scaled_data = scaler.transform(input_data)
+            
+            # Model Prediction
+            prediction = model.predict(scaled_data[-1].reshape(1, -1))[0]
+            current_price = market_data['Close'].iloc[-1]
+            
+            # Expert Rating Display
+            st.markdown(f"""
+            <div class='expert-rating'>
+                <div class='rating-header'>Expert Consensus Rating</div>
+                <div class='main-rating'>{(prediction/current_price*100)-100:.1f}%</div>
+                <div class='breakdown-item">
+                    <span>Model Confidence</span>
+                    <span>{np.mean([res['score'] for res in sentiment_results]):.0% if sentiment_results else 'N/A'}</span>
+                </div>
+                <div class='disclaimer'>
+                    Aggregated analysis from market data and news sentiment
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Market Summary
+            with st.expander("Detailed Market Analysis"):
+                st.subheader("Price Trend Analysis")
+                fig, ax = plt.subplots(figsize=(10, 4))
+                market_data[-90:].plot(x='Date', y='Close', ax=ax)
+                st.pyplot(fig)
+                
+                if sentiment_results:
+                    st.subheader("Recent Market Sentiment")
+                    cols = st.columns(3)
+                    for idx, sentiment in enumerate(sentiment_results[:3]):
+                        cols[idx%3].metric(
+                            f"Headline {idx+1}",
+                            sentiment['label'],
+                            f"{sentiment['score']:.0%}"
+                        )
+
+        except Exception as e:
+            st.error(f"Analysis error: {str(e)}")
+            st.write("Please try different parameters or check input values")
 else:
     st.warning("Please enter a valid NASDAQ ticker symbol (e.g., AAPL, TSLA)")
