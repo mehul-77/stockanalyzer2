@@ -70,20 +70,20 @@ def get_news_sentiment(ticker):
 def prepare_features(stock_data, news_features):
     # Build a DataFrame from the latest stock row and the news sentiment data.
     features = pd.DataFrame({
-        'Adj Close': [stock_data['Close']],
-        'Close': [stock_data['Close']],
-        'High': [stock_data['High']],
-        'Low': [stock_data['Low']],
-        'Open': [stock_data['Open']],
-        'Volume': [stock_data['Volume']],
-        'Daily_Return': [stock_data['Daily_Return']],
+        'Adj Close': [stock_data['Close'].iloc[-1]],
+        'Close': [stock_data['Close'].iloc[-1]],
+        'High': [stock_data['High'].iloc[-1]],
+        'Low': [stock_data['Low'].iloc[-1]],
+        'Open': [stock_data['Open'].iloc[-1]],
+        'Volume': [stock_data['Volume'].iloc[-1]],
+        'Daily_Return': [stock_data['Daily_Return'].iloc[-1]],
         'Sentiment_Score': [news_features['Sentiment_Score']],
         'Next_Day_Return': [0],  # Placeholder
-        'Moving_Avg': [stock_data['Moving_Avg']],
-        'Rolling_Std_Dev': [stock_data['Rolling_Std_Dev']],
-        'RSI': [stock_data['RSI']],
-        'EMA': [stock_data['EMA']],
-        'ROC': [stock_data['ROC']],
+        'Moving_Avg': [stock_data['Moving_Avg'].iloc[-1]],
+        'Rolling_Std_Dev': [stock_data['Rolling_Std_Dev'].iloc[-1]],
+        'RSI': [stock_data['RSI'].iloc[-1]],
+        'EMA': [stock_data['EMA'].iloc[-1]],
+        'ROC': [stock_data['ROC'].iloc[-1]],
         'Sentiment_Numeric': [news_features['Sentiment_Numeric']]
     })
 
@@ -135,7 +135,7 @@ with col1:
         latest_data = processed_data.iloc[-1]
 
         # Prepare features and scale them
-        features = prepare_features(latest_data, news_features)
+        features = prepare_features(processed_data, news_features)
         scaled_data = scaler.transform(features)
 
         # Get probability distribution from the model
