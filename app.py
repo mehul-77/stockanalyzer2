@@ -80,9 +80,9 @@ def prepare_features(stock_data, news_features):
         st.error("Error: 'Close' column is missing in the stock data.")
         return pd.DataFrame()
     
-    # Build a DataFrame from the latest stock row and the news sentiment data.
+    # Build a DataFrame using the last row of stock_data and news sentiment data.
     features = pd.DataFrame({
-        'Adj Close': [stock_data['Close'].iloc[-1]],
+        'Adj Close': [stock_data['Close'].iloc[-1]],  # Using 'Close' as a proxy for 'Adj Close'
         'Close': [stock_data['Close'].iloc[-1]],
         'High': [stock_data['High'].iloc[-1]],
         'Low': [stock_data['Low'].iloc[-1]],
@@ -100,17 +100,20 @@ def prepare_features(stock_data, news_features):
         'Headlines_Count': [news_features['Headlines_Count']]
     })
 
-    required_features = [
+    # List of all features we created
+    all_features = [
         "Adj Close", "Close", "High", "Low", "Open", "Volume",
         "Daily_Return", "Sentiment_Score", "Next_Day_Return",
-        "Moving_Avg", "Rolling_Std_Dev", "RSI", "EMA", "ROC", "Sentiment_Numeric", "Headlines_Count"
+        "Moving_Avg", "Rolling_Std_Dev", "RSI", "EMA", "ROC",
+        "Sentiment_Numeric", "Headlines_Count"
     ]
     
-    for feature in required_features:
+    # Ensure all required columns exist (if any are missing, add them with default 0)
+    for feature in all_features:
         if feature not in features.columns:
             features[feature] = 0
 
-    return features[required_features]
+    return features[all_features]
 
 def get_recommendation(probabilities, classes):
     """
@@ -151,82 +154,85 @@ with col1:
                 processed_data = calculate_technical_indicators(stock_data)
                 latest_data = processed_data.iloc[-1]
 
-                # Prepare features and scale them
+                # Prepare features and then re-order columns based on the scaler's fitted feature names
                 features = prepare_features(processed_data, news_features)
-                if not features.empty:
-                    scaled_data = scaler.transform(features)
+                
+                # If the scaler has feature names from training, select only those columns
+                if hasattr(scaler, "feature_names_in_"):
+                    expected_features = list(scaler.feature_names_in_)
+                    features = features[expected_features]
+                else:
+                    st.warning("Scaler does not have feature names. Ensure the feature order matches training.")
 
-                    # Get probability distribution from the model
-                    pred_probs = model.predict_proba(scaled_data)[0]
-                    recommendation, confidence, probs = get_recommendation(pred_probs, model.classes_)
+                # Scale the features and get prediction probabilities
+                scaled_data = scaler.transform(features)
+                pred_probs = model.predict_proba(scaled_data)[0]
+                recommendation, confidence, probs = get_recommendation(pred_probs, model.classes_)
             
         except Exception as e:
             st.error(f"Error processing data: {str(e)}")
 
-        with col2:
-            if not stock_data.empty:
-                st.subheader(f"{ticker} Technical Analysis")
-                st.line_chart(stock_data[['Close', 'Moving_Avg']])
-                
-                col2_1, col2_2, col2_3 = st.columns(3)
-                with col2_1:
-                    st.metric("Current Price", f"${latest_data['Close']:.2f}")
-                    st.metric("RSI", f"{latest_data['RSI']:.2f}")
-                    
-                with col2_2:
-                    st.metric("14-Day EMA", f"${latest_data['EMA']:.2f}")
-                    st.metric("Daily Volume", f"{latest_data['Volume']:,.0f}")
-                    
-                with col2_3:
-                    st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
-
-                st.markdown("---")
-                st.subheader("Recent News Headlines")
-                for headline, sentiment in zip(news_features['Headlines'], news_features['Sentiments']):
-                    st.write(f"Headline: {headline}")
-                    st.write(f"Sentiment: {'Positive' if sentiment > 0 else 'Negative' if sentiment < 0 else 'Neutral'}")
-                    st.write("---")
+with col2:
+    if not stock_data.empty:
+        st.subheader(f"{ticker} Technical Analysis")
+        st.line_chart(stock_data[['Close', 'Moving_Avg']])
+        
+        col2_1, col2_2, col2_3 = st.columns(3)
+        with col2_1:
+            st.metric("Current Price", f"${latest_data['Close']:.2f}")
+            st.metric("RSI", f"{latest_data['RSI']:.2f}")
+            
+        with col2_2:
+            st.metric("14-Day EMA", f"${latest_data['EMA']:.2f}")
+            st.metric("Daily Volume", f"{latest_data['Volume']:,.0f}")
+            
+        with col2_3:
+            st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
 
         st.markdown("---")
-        st.subheader("Investment Recommendation")
+        st.subheader("Recent News Headlines")
+        for headline, sentiment in zip(news_features['Headlines'], news_features['Sentiments']):
+            st.write(f"Headline: {headline}")
+            st.write(f"Sentiment: {'Positive' if sentiment > 0 else 'Negative' if sentiment < 0 else 'Neutral'}")
+            st.write("---")
 
-        if 'recommendation' in locals():
-            col3_1, col3_2 = st.columns([1, 2])
-            
-            with col3_1:
-                st.metric("Recommendation", recommendation)
-                st.progress(confidence)
-                st.caption(f"Confidence Level: {confidence*100:.1f}%")
-                
-                st.markdown("**Probabilities:**")
-                for label, prob in probs.items():
-                    st.write(f"**{label}:** {prob*100:.1f}%")
-                
-            with col3_2:
-                if recommendation == "Buy":
-                    st.success("**Analysis:** Strong positive indicators detected. Consider adding to your portfolio.")
-                elif recommendation == "Sell":
-                    st.error("**Analysis:** Negative trends detected. Consider reducing your position.")
-                else:
-                    st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
-                
-            st.markdown("---")
-            st.subheader("Recent News Analysis")
-            
-            gn = GoogleNews()
-            gn.search(f"{ticker} stock news")
-            results = gn.results()[:5]
-            
-            for news in results:
-                with st.expander(news['title']):
-                    st.caption(news['media'])
-                    st.write(news['desc'])
-                    st.caption(news['date'])
+st.markdown("---")
+st.subheader("Investment Recommendation")
+
+if 'recommendation' in locals():
+    col3_1, col3_2 = st.columns([1, 2])
+    
+    with col3_1:
+        st.metric("Recommendation", recommendation)
+        st.progress(confidence)
+        st.caption(f"Confidence Level: {confidence*100:.1f}%")
+        
+        st.markdown("**Probabilities:**")
+        for label, prob in probs.items():
+            st.write(f"**{label}:** {prob*100:.1f}%")
+        
+    with col3_2:
+        if recommendation == "Buy":
+            st.success("**Analysis:** Strong positive indicators detected. Consider adding to your portfolio.")
+        elif recommendation == "Sell":
+            st.error("**Analysis:** Negative trends detected. Consider reducing your position.")
         else:
-            st.warning("Select a stock to see analysis")
-
-    else:
-        st.warning("Models are not loaded. Please check the model loading section.")
+            st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
+        
+    st.markdown("---")
+    st.subheader("Recent News Analysis")
+    
+    gn = GoogleNews()
+    gn.search(f"{ticker} stock news")
+    results = gn.results()[:5]
+    
+    for news in results:
+        with st.expander(news['title']):
+            st.caption(news['media'])
+            st.write(news['desc'])
+            st.caption(news['date'])
+else:
+    st.warning("Select a stock to see analysis")
 
 st.markdown("---")
 st.caption("© 2024 NASDAQ Stock Analyzer. For educational purposes only.")
