@@ -32,7 +32,7 @@ model, scaler = load_models()
 
 # Helper functions
 def get_stock_data(ticker):
-    API_KEY = "LTC1HNLYBEEHB4S2"
+    API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY"
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={ticker}&apikey={API_KEY}&outputsize=compact"
     response = requests.get(url)
     data = response.json()
@@ -83,6 +83,10 @@ def get_news_sentiment(ticker):
     }
 
 def prepare_features(stock_data, news_features):
+    if 'Close' not in stock_data.columns:
+        st.error("Error: 'Close' column is missing in the stock data.")
+        return pd.DataFrame()
+    
     # Build a DataFrame from the latest stock row and the news sentiment data.
     features = pd.DataFrame({
         'Adj Close': [stock_data['Adj Close'].iloc[-1]],
@@ -148,42 +152,47 @@ with col1:
             # Retrieve stock data and compute indicators
             stock_data = get_stock_data(ticker)
             news_features = get_news_sentiment(ticker)
-            processed_data = calculate_technical_indicators(stock_data)
-            latest_data = processed_data.iloc[-1]
+            if stock_data.empty:
+                st.warning("No stock data available.")
+            else:
+                processed_data = calculate_technical_indicators(stock_data)
+                latest_data = processed_data.iloc[-1]
 
-            # Prepare features and scale them
-            features = prepare_features(processed_data, news_features)
-            scaled_data = scaler.transform(features)
+                # Prepare features and scale them
+                features = prepare_features(processed_data, news_features)
+                if not features.empty:
+                    scaled_data = scaler.transform(features)
 
-            # Get probability distribution from the model
-            pred_probs = model.predict_proba(scaled_data)[0]
-            recommendation, confidence, probs = get_recommendation(pred_probs, model.classes_)
+                    # Get probability distribution from the model
+                    pred_probs = model.predict_proba(scaled_data)[0]
+                    recommendation, confidence, probs = get_recommendation(pred_probs, model.classes_)
             
         except Exception as e:
             st.error(f"Error processing data: {str(e)}")
 
         with col2:
-            st.subheader(f"{ticker} Technical Analysis")
-            st.line_chart(stock_data[['Close', 'Moving_Avg']])
-            
-            col2_1, col2_2, col2_3 = st.columns(3)
-            with col2_1:
-                st.metric("Current Price", f"${latest_data['Close']:.2f}")
-                st.metric("RSI", f"{latest_data['RSI']:.2f}")
+            if not stock_data.empty:
+                st.subheader(f"{ticker} Technical Analysis")
+                st.line_chart(stock_data[['Close', 'Moving_Avg']])
                 
-            with col2_2:
-                st.metric("14-Day EMA", f"${latest_data['EMA']:.2f}")
-                st.metric("Daily Volume", f"{latest_data['Volume']:,.0f}")
-                
-            with col2_3:
-                st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
+                col2_1, col2_2, col2_3 = st.columns(3)
+                with col2_1:
+                    st.metric("Current Price", f"${latest_data['Close']:.2f}")
+                    st.metric("RSI", f"{latest_data['RSI']:.2f}")
+                    
+                with col2_2:
+                    st.metric("14-Day EMA", f"${latest_data['EMA']:.2f}")
+                    st.metric("Daily Volume", f"{latest_data['Volume']:,.0f}")
+                    
+                with col2_3:
+                    st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
 
-            st.markdown("---")
-            st.subheader("Recent News Headlines")
-            for headline, sentiment in zip(news_features['Headlines'], news_features['Sentiments']):
-                st.write(f"Headline: {headline}")
-                st.write(f"Sentiment: {'Positive' if sentiment > 0 else 'Negative' if sentiment < 0 else 'Neutral'}")
-                st.write("---")
+                st.markdown("---")
+                st.subheader("Recent News Headlines")
+                for headline, sentiment in zip(news_features['Headlines'], news_features['Sentiments']):
+                    st.write(f"Headline: {headline}")
+                    st.write(f"Sentiment: {'Positive' if sentiment > 0 else 'Negative' if sentiment < 0 else 'Neutral'}")
+                    st.write("---")
 
         st.markdown("---")
         st.subheader("Investment Recommendation")
