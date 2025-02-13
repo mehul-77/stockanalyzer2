@@ -125,6 +125,16 @@ def analyze_sentiment(news_articles):
     return 0.5
 
 # -----------------------------
+# Generate Buy/Hold/Sell Recommendation
+# -----------------------------
+def get_recommendation(avg_sentiment, predicted_price, current_price):
+    price_change = ((predicted_price - current_price) / current_price) * 100
+    buy_prob = min(max((avg_sentiment * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
+    sell_prob = min(max(((1 - avg_sentiment) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
+    hold_prob = 100 - buy_prob - sell_prob
+    return buy_prob, hold_prob, sell_prob
+
+# -----------------------------
 # Streamlit UI Layout
 # -----------------------------
 st.title("📈 Stock Market Analyzer")
@@ -152,31 +162,3 @@ if stock_ticker:
     news_articles = fetch_news(stock_ticker)
     for i, article in enumerate(news_articles):
         st.write(f"**News {i+1}:** {article}")
-    
-    st.subheader("🚀 Investment Recommendation")
-    try:
-        avg_sentiment = analyze_sentiment(news_articles)
-        input_data = stock_data[PREDICTION_FEATURES].tail(min(30, len(stock_data))).values
-
-        # Ensure proper reshaping for scaler
-        input_data = input_data.reshape(-1, len(PREDICTION_FEATURES))
-
-        input_data_scaled = scaler.transform(input_data)
-        prediction = prediction_model.predict(input_data_scaled)[-1]
-        buy_prob, hold_prob, sell_prob = get_recommendation(avg_sentiment, prediction, stock_data["Close"].iloc[-1])
-
-        # Styled Output for Recommendations
-        st.markdown("### 🏆 Expert Recommendation")
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: green;'>BUY</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{buy_prob:.1f}%</div>", unsafe_allow_html=True)
-        with col_b:
-            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: orange;'>HOLD</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{hold_prob:.1f}%</div>", unsafe_allow_html=True)
-        with col_c:
-            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: red;'>SELL</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{sell_prob:.1f}%</div>", unsafe_allow_html=True)
-
-    except Exception as e:
-        st.error(f"Error during prediction: {e}")
