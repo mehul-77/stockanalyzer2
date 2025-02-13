@@ -32,7 +32,7 @@ model, scaler = load_models()
 
 # Helper functions
 def get_stock_data(ticker):
-    API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY"
+    API_KEY = "LTC1HNLYBEEHB4S2"
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={ticker}&apikey={API_KEY}&outputsize=compact"
     response = requests.get(url)
     data = response.json()
