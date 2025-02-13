@@ -1,12 +1,9 @@
+# requirements.txt
 streamlit
 yfinance
 pandas
-matplotlib
-feedparser
-joblib
 numpy
-scikit-learn
-ta
-transformers
-torch
+scikit-learn==1.3.0
 textblob
+googlenews-python
+python-dotenv
