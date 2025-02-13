@@ -1,120 +1,287 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
+import feedparser
+from datetime import datetime, timedelta
 import joblib
-import plotly.graph_objects as go
-from GoogleNews import GoogleNews
-from transformers import pipeline
+import numpy as np
+import os
+from sklearn.preprocessing import StandardScaler
+import ta  # Pure Python alternative to TA-Lib
 
-# ------------------------------
-# Load Random Forest Model & Scaler
-# ------------------------------
+# Streamlit Page Configuration
+st.set_page_config(page_title="Stock Analyzer", layout="wide")
+
+# Load Sentiment Analysis Model
 @st.cache_resource(show_spinner=False)
-def load_model_and_scaler():
+def load_sentiment_model():
     try:
-        model = joblib.load("random_forest_model.pkl")
-        scaler = joblib.load("scaler.pkl")
-        return model, scaler
-    except Exception as e:
-        st.error("Error loading model or scaler: " + str(e))
-        return None, None
-
-model, scaler = load_model_and_scaler()
-
-# ------------------------------
-# Load FinBERT Sentiment Pipeline
-# ------------------------------
-@st.cache_resource(show_spinner=False)
-def load_sentiment_pipeline():
-    try:
-        sentiment_pipe = pipeline(
-            "text-classification", 
-            model="yiyanghkust/finbert-tone", 
+        from transformers import pipeline
+        return pipeline(
+            "text-classification",
+            model="yiyanghkust/finbert-tone",
             return_all_scores=True
         )
-        return sentiment_pipe
     except Exception as e:
-        st.error("Error loading sentiment pipeline: " + str(e))
+        st.error(f"Error loading sentiment model: {e}")
         return None
 
-sentiment_pipe = load_sentiment_pipeline()
+sentiment_pipeline = load_sentiment_model()
 
-# ------------------------------
-# Fetch Real-Time Stock Data using yfinance
-# ------------------------------
-def fetch_stock_data(symbol, period="6mo"):
-    stock = yf.Ticker(symbol)
-    df = stock.history(period=period)
-    df.reset_index(inplace=True)
-    return df
+# Load Random Forest Model and Scaler
+MODEL_PATH = "random_forest_model.pkl"
+SCALER_PATH = "scaler.pkl"
 
-# ------------------------------
-# Compute Technical Indicators
-# ------------------------------
-def compute_technical_indicators(df):
-    df["Daily_Return"] = df["Close"].pct_change()
-    df["Moving_Avg"] = df["Close"].rolling(window=14).mean()
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0).rolling(window=14).mean()
-    loss = (-delta).clip(lower=0).rolling(window=14).mean()
-    rs = gain / (loss + 1e-10)
-    df["RSI"] = 100 - (100 / (1 + rs))
-    df.fillna(method="bfill", inplace=True)
-    return df
-
-# ------------------------------
-# Fetch News Articles using GoogleNews
-# ------------------------------
-def fetch_news(symbol):
-    googlenews = GoogleNews(lang='en', period='1d')
-    query = f"{symbol} stock"
-    googlenews.search(query)
-    results = googlenews.result()
-    headlines = [item["title"] for item in results][:5]
-    return headlines
-
-# ------------------------------
-# Analyze Sentiment for News Headlines using FinBERT
-# ------------------------------
-def analyze_sentiments(headlines):
-    scores = []
-    news_details = []
-    if sentiment_pipe is None:
-        return 0.5, []
-    for headline in headlines:
-        result = sentiment_pipe(headline)
-        # Take the label with the highest score from the first (and only) prediction set
-        best = max(result[0], key=lambda x: x["score"])
-        label = best["label"].lower()
-        if label == "positive":
-            score = 1.0
-        elif label == "neutral":
-            score = 0.5
+@st.cache_resource(show_spinner=False)
+def load_prediction_model_and_scaler(model_path, scaler_path):
+    try:
+        if os.path.exists(model_path) and os.path.exists(scaler_path):
+            model = joblib.load(model_path)
+            scaler = joblib.load(scaler_path)
+            st.success("✅ Model and Scaler loaded successfully!")
+            return model, scaler
         else:
-            score = 0.0
-        scores.append(score)
-        news_details.append({"headline": headline, "label": best["label"], "score": score})
-    avg_sentiment = np.mean(scores) if scores else 0.5
-    return avg_sentiment, news_details
+            st.warning(f"⚠️ Model or Scaler file not found at: {model_path} or {scaler_path}")
+            return None, None
+    except Exception as e:
+        st.error(f"❌ Error loading model or scaler: {e}")
+        return None, None
 
-# ------------------------------
-# Prepare Feature Vector for Prediction
-# ------------------------------
-def prepare_feature_vector(df, avg_sentiment, headlines_count):
-    # Use the latest available data from stock_df and combine with news features
-    latest = df.iloc[-1]
-    features = {
-        "Adj Close": latest["Close"],  # Assuming no separate Adj Close available
-        "Close": latest["Close"],
-        "High": latest["High"],
-        "Low": latest["Low"],
-        "Open": latest["Open"],
-        "Volume": latest["Volume"],
-        "Daily_Return": latest["Daily_Return"],
-        "Sentiment_Score": avg_sentiment,
-        "Headlines_Count": headlines_count,
-        "Next_Day_Return": 0,      # Placeholder (if unavailable)
-        "Moving_Avg": latest["Moving_Avg"],
-        "Rolling_Std_Dev": 0,      # Placeholder (if unavailable)\n        \"RSI\": latest[\"RSI\"],\n        \"EMA\": 0,           # Placeholder\n        \"ROC\": 0,           # Placeholder\n        \"Sentiment_Numeric\": avg_sentiment\n    }\n    feature_order = [\n        \"Adj Close\", \"Close\", \"High\", \"Low\", \"Open\", \"Volume\",\n        \"Daily_Return\", \"Sentiment_Score\", \"Headlines_Count\",\n        \"Next_Day_Return\", \"Moving_Avg\", \"Rolling_Std_Dev\",\n        \"RSI\", \"EMA\", \"ROC\", \"Sentiment_Numeric\"\n    ]\n    feature_vector = np.array([features[f] for f in feature_order]).reshape(1, -1)\n    return feature_vector\n\n# ------------------------------\n# Interpret Model Prediction (Assuming 3 classes: Buy, Hold, Sell)\n# ------------------------------\ndef interpret_prediction(probs):\n    buy_prob, hold_prob, sell_prob = probs\n    return buy_prob, hold_prob, sell_prob\n\n# ------------------------------\n# Streamlit UI Layout\n# ------------------------------\nst.title(\"NASDAQ Stock Analyzer and Predictor\")\n\nst.sidebar.header(\"Select NASDAQ Stock\")\nstock_symbol = st.sidebar.text_input(\"Enter NASDAQ Symbol (e.g., AAPL, MSFT, TSLA):\", \"AAPL\").upper()\n\nif st.sidebar.button(\"Analyze\"):\n    if not model or not scaler:\n        st.error(\"Model and scaler are not loaded properly.\")\n    else:\n        st.header(f\"Real-Time Analysis for {stock_symbol}\")\n        # Fetch and process stock data\n        stock_df = fetch_stock_data(stock_symbol, period=\"6mo\")\n        stock_df = compute_technical_indicators(stock_df)\n        \n        # Display interactive candlestick chart using Plotly\n        st.subheader(\"Stock Price Chart\")\n        fig = go.Figure(data=[go.Candlestick(x=stock_df[\"Date\"],\n                                             open=stock_df[\"Open\"],\n                                             high=stock_df[\"High\"],\n                                             low=stock_df[\"Low\"],\n                                             close=stock_df[\"Close\"])])\n        fig.update_layout(xaxis_rangeslider_visible=False)\n        st.plotly_chart(fig, use_container_width=True)\n        \n        # Fetch news and perform sentiment analysis\n        st.subheader(\"Latest News & Sentiment Analysis\")\n        headlines = fetch_news(stock_symbol)\n        if headlines:\n            st.write(\"**News Headlines:**\")\n            for hl in headlines:\n                st.markdown(f\"- {hl}\")\n            avg_sentiment, news_details = analyze_sentiments(headlines)\n            st.write(f\"**Average Sentiment Score:** {avg_sentiment:.2f}\")\n            for detail in news_details:\n                st.write(f\"**{detail['headline']}** - {detail['label']} (Score: {detail['score']})\")\n        else:\n            st.write(\"No news available.\")\n            avg_sentiment = 0.5\n        \n        # Prepare features and predict using the Random Forest model\n        feature_vector = prepare_feature_vector(stock_df, avg_sentiment, len(headlines))\n        scaled_features = scaler.transform(feature_vector)\n        prediction_probs = model.predict_proba(scaled_features)\n        if hasattr(prediction_probs, 'tolist'):\n            prediction_probs = prediction_probs.tolist()[0]\n        else:\n            prediction_probs = prediction_probs[0]\n        buy_prob, hold_prob, sell_prob = interpret_prediction(prediction_probs)\n        \n        # Display Expert Rating (Buy/Hold/Sell probabilities)\n        st.subheader(\"Expert Rating\")\n        col1, col2, col3 = st.columns(3)\n        col1.metric(\"Buy\", f\"{buy_prob * 100:.2f}%\")\n        col2.metric(\"Hold\", f\"{hold_prob * 100:.2f}%\")\n        col3.metric(\"Sell\", f\"{sell_prob * 100:.2f}%\")\n        \n        st.write(\"---\")\n        st.write(\"*Final recommendation based on expert rating probabilities.*\")\n"} 
+prediction_model, scaler = load_prediction_model_and_scaler(MODEL_PATH, SCALER_PATH)
 
+# Ensure Required Features
+REQUIRED_FEATURES = [
+    "Adj Close", "Close", "High", "Low", "Open", "Volume",
+    "Daily_Return", "Sentiment_Score", "Headlines_Count",
+    "Next_Day_Return", "Moving_Avg", "Rolling_Std_Dev",
+    "RSI", "EMA", "ROC", "Sentiment_Numeric"
+]
+
+def ensure_features(df, required_features):
+    for feature in required_features:
+        if feature not in df.columns:
+            df[feature] = 0
+    df = df[required_features]
+    return df
+
+# Feature Engineering Function
+def engineer_features(df):
+    """Calculate technical indicators using ta library."""
+    try:
+        df['Daily_Return'] = df['Close'].pct_change()
+        df['Moving_Avg'] = df['Close'].rolling(window=10).mean()
+        df['Rolling_Std_Dev'] = df['Close'].rolling(window=10).std()
+        
+        # Use ta for technical indicators
+        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
+        df['EMA'] = ta.trend.ema_indicator(df['Close'], window=12)
+        df['ROC'] = ta.momentum.roc(df['Close'], window=10)
+        
+        # Fill NaN values
+        df.fillna(0, inplace=True)
+        return df
+    except Exception as e:
+        st.error(f"Feature engineering failed: {e}")
+        return df
+
+# Fetch Stock Data
+@st.cache_data(show_spinner=False)
+def fetch_stock_data(stock_ticker, start_date, end_date):
+    try:
+        stock_data = yf.download(stock_ticker, start=start_date, end=end_date, interval="1d")
+        if stock_data.empty:
+            return None
+        stock_data = stock_data.reset_index()
+        stock_data['Date'] = stock_data['Date'].astype(str)
+        return stock_data
+    except Exception as e:
+        st.error(f"Error fetching stock data: {e}")
+        return None
+
+# Fetch Current Stock Info
+@st.cache_data(show_spinner=False)
+def fetch_current_stock_info(stock_ticker):
+    try:
+        stock = yf.Ticker(stock_ticker)
+        stock_info = stock.history(period="1d")
+        if stock_info.empty:
+            return None
+        return {
+            "current_price": stock_info["Close"].iloc[-1],
+            "previous_close": stock_info["Close"].iloc[-2] if len(stock_info) > 1 else None,
+            "open": stock_info["Open"].iloc[-1],
+            "day_high": stock_info["High"].iloc[-1],
+            "day_low": stock_info["Low"].iloc[-1],
+            "volume": stock_info["Volume"].iloc[-1]
+        }
+    except Exception as e:
+        st.error(f"Error fetching current stock info: {e}")
+        return None
+
+# Fetch News Data
+@st.cache_data(show_spinner=False)
+def fetch_news(stock_ticker):
+    try:
+        rss_url = f"https://news.google.com/rss/search?q={stock_ticker}+stock&hl=en-IN&gl=IN&ceid=IN:en"
+        feed = feedparser.parse(rss_url)
+        return [entry.title for entry in feed.entries[:5]]
+    except Exception as e:
+        st.error(f"Error fetching news: {e}")
+        return []
+
+# Perform Sentiment Analysis with Score Mapping
+def analyze_sentiment(news_articles):
+    if news_articles and sentiment_pipeline:
+        try:
+            sentiments = sentiment_pipeline(news_articles)
+            for sentiment in sentiments:
+                if sentiment["label"] == "positive":
+                    sentiment["score"] = 1.0
+                elif sentiment["label"] == "neutral":
+                    sentiment["score"] = 0.5
+                elif sentiment["label"] == "negative":
+                    sentiment["score"] = 0.0
+            return sentiments
+        except Exception as e:
+            st.error(f"Error in sentiment analysis: {e}")
+            return []
+    return []
+
+# Generate Recommendation
+def get_recommendation(sentiments, predicted_price, current_price):
+    if not sentiments:
+        return 33.3, 33.3, 33.3  # Equal probabilities if no sentiment data
+
+    avg_score = np.mean([s['score'] for s in sentiments])
+    price_change = ((predicted_price - current_price) / current_price) * 100
+
+    buy_prob = min(max((avg_score * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
+    sell_prob = min(max(((1 - avg_score) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
+    hold_prob = 100 - buy_prob - sell_prob
+
+    # Normalize probabilities
+    total = buy_prob + sell_prob + hold_prob
+    return (
+        buy_prob / total * 100,
+        hold_prob / total * 100,
+        sell_prob / total * 100
+    )
+
+# Streamlit UI
+st.title("📈 Stock Market Analyzer")
+
+stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upper()
+date = st.date_input("Select Date for Analysis:", datetime.today())
+
+stock_data = None
+stock_info = None
+news = []
+sentiments = []
+
+if stock_ticker:
+    # Fetch 2 years of data for prediction to ensure sufficient data
+    start_date = (date - timedelta(days=730)).strftime('%Y-%m-%d')
+    end_date = date.strftime('%Y-%m-%d')
+    stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
+    stock_info = fetch_current_stock_info(stock_ticker)
+    news = fetch_news(stock_ticker)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if stock_data is not None and not stock_data.empty:
+        st.subheader("📈 Stock Price Trend")
+        # Use only the latest 30 days for the chart for clarity
+        chart_data = stock_data.iloc[-30:] if len(stock_data) >= 30 else stock_data
+        fig, ax = plt.subplots()
+        ax.plot(chart_data['Date'], chart_data['Close'], marker='o', linestyle='-')
+        plt.xticks(rotation=45)
+        plt.xlabel("Date")
+        plt.ylabel("Closing Price (USD)")
+        plt.title(f"{stock_ticker} Closing Prices")
+        st.pyplot(fig)
+    else:
+        st.error("❌ No stock data available! Please check the ticker symbol.")
+
+    if stock_info:
+        st.subheader("📊 Current Stock Information")
+        st.write(f"**Current Price:** ${stock_info['current_price']:.2f}")
+        if stock_info['previous_close']:
+            st.write(f"**Previous Close:** ${stock_info['previous_close']:.2f}")
+        st.write(f"**Open:** ${stock_info['open']:.2f}")
+        st.write(f"**Day High:** ${stock_info['day_high']:.2f}")
+        st.write(f"**Day Low:** ${stock_info['day_low']:.2f}")
+        st.write(f"**Volume:** {int(stock_info['volume']):,}")
+    else:
+        st.error("❌ No market data found for this stock.")
+
+with col2:
+    st.subheader("📰 Latest News & Sentiment")
+    if news:
+        sentiments = analyze_sentiment(news)
+        for i, article in enumerate(news):
+            st.write(f"**News {i+1}:** {article}")
+            if sentiments and i < len(sentiments):
+                label = sentiments[i]['label'].capitalize()
+                score = sentiments[i]['score']
+                st.write(f"**Sentiment:** {label} (Score: {score:.1f})")
+            else:
+                st.write("Sentiment: Not Available")
+            st.write("---")
+    else:
+        st.write("No news available.")
+
+# Recommendation Section
+st.subheader("🚀 Investment Recommendation")
+if prediction_model and scaler and stock_data is not None and len(stock_data) > 0 and stock_info:  # Check if model, scaler, and data are loaded
+    try:
+        # 1. Feature Engineering
+        stock_data = engineer_features(stock_data.copy())  # Create a copy to avoid modifying original
+
+        # 2. Ensure Required Features (after engineering)
+        stock_data = ensure_features(stock_data, REQUIRED_FEATURES)
+
+        # 3. Prepare Input Data for Prediction (using the LAST 30 days, or less if not available)
+        input_data = stock_data[REQUIRED_FEATURES].tail(min(30, len(stock_data)))  # Use .tail() and handle cases with less than 30 days
+        st.write("Input Data Shape:", input_data.shape)  # Debug
+        st.write("Input Data:", input_data)  # Debug
+
+        # 4. Scaling
+        input_data_scaled = scaler.transform(input_data)
+
+        # 5. Prediction
+        prediction = prediction_model.predict(input_data_scaled)[0]
+
+        # Generate Recommendation
+        buy, hold, sell = get_recommendation(
+            sentiments if news else [],
+            prediction,
+            stock_info['current_price']
+        )
+
+        # Display Recommendation
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("BUY Probability", f"{buy:.1f}%", delta="↑ Recommended" if buy > 50 else "")
+        with col_b:
+            st.metric("HOLD Probability", f"{hold:.1f}%", delta="➔ Neutral" if hold > 50 else "")
+        with col_c:
+            st.metric("SELL Probability", f"{sell:.1f}%", delta="↓ Caution" if sell > 50 else "")
+
+        st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
+
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
+        st.write("Debug Info:")  # Provide more debug info
+        st.write(f"Model Loaded: {prediction_model is not None}")
+        st.write(f"Scaler Loaded: {scaler is not None}")
+        st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
+        if stock_data is not None:
+            st.write(f"Stock Data Columns: {stock_data.columns}")  # Check available columns
+else:
+    st.warning("⚠️ Not enough data to generate recommendations")
+    st.write("Debug Info:")
+    st.write(f"Model Loaded: {prediction_model is not None}")
+    st.write(f"Scaler Loaded: {scaler is not None}")
+    st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
