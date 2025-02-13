@@ -32,6 +32,13 @@ def get_stock_data(ticker):
     hist = stock.history(period="1y")
     return hist
 
+def compute_rsi(series, window=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
 def calculate_technical_indicators(df):
     df['Daily_Return'] = df['Close'].pct_change()
     df['Moving_Avg'] = df['Close'].rolling(window=14).mean()
@@ -41,23 +48,16 @@ def calculate_technical_indicators(df):
     df['ROC'] = df['Close'].pct_change(periods=14)
     return df.dropna()
 
-def compute_rsi(series, window=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
 def get_news_sentiment(ticker):
     gn = GoogleNews()
     gn.search(f"{ticker} stock news")
     results = gn.results()[:10]  # Get top 10 news
-    
+
     sentiments = []
     for result in results:
         analysis = TextBlob(result['title'])
         sentiments.append(analysis.sentiment.polarity)
-    
+
     return {
         'Sentiment_Score': np.mean(sentiments) if sentiments else 0,
         'Headlines_Count': len(results),
@@ -65,25 +65,26 @@ def get_news_sentiment(ticker):
     }
 
 def prepare_features(stock_data, news_features):
+    # Build a DataFrame from the latest stock row and the news sentiment data.
     features = pd.DataFrame({
-        'Adj Close': stock_data['Close'],
-        'Close': stock_data['Close'],
-        'High': stock_data['High'],
-        'Low': stock_data['Low'],
-        'Open': stock_data['Open'],
-        'Volume': stock_data['Volume'],
-        'Daily_Return': stock_data['Daily_Return'],
-        'Sentiment_Score': news_features['Sentiment_Score'],
-        'Headlines_Count': news_features['Headlines_Count'],
-        'Next_Day_Return': 0,  # Placeholder
-        'Moving_Avg': stock_data['Moving_Avg'],
-        'Rolling_Std_Dev': stock_data['Rolling_Std_Dev'],
-        'RSI': stock_data['RSI'],
-        'EMA': stock_data['EMA'],
-        'ROC': stock_data['ROC'],
-        'Sentiment_Numeric': news_features['Sentiment_Numeric']
-    }, index=[0])
-    
+        'Adj Close': [stock_data['Close']],
+        'Close': [stock_data['Close']],
+        'High': [stock_data['High']],
+        'Low': [stock_data['Low']],
+        'Open': [stock_data['Open']],
+        'Volume': [stock_data['Volume']],
+        'Daily_Return': [stock_data['Daily_Return']],
+        'Sentiment_Score': [news_features['Sentiment_Score']],
+        'Headlines_Count': [news_features['Headlines_Count']],
+        'Next_Day_Return': [0],  # Placeholder
+        'Moving_Avg': [stock_data['Moving_Avg']],
+        'Rolling_Std_Dev': [stock_data['Rolling_Std_Dev']],
+        'RSI': [stock_data['RSI']],
+        'EMA': [stock_data['EMA']],
+        'ROC': [stock_data['ROC']],
+        'Sentiment_Numeric': [news_features['Sentiment_Numeric']]
+    })
+
     required_features = [
         "Adj Close", "Close", "High", "Low", "Open", "Volume",
         "Daily_Return", "Sentiment_Score", "Headlines_Count",
@@ -94,22 +95,28 @@ def prepare_features(stock_data, news_features):
     for feature in required_features:
         if feature not in features.columns:
             features[feature] = 0
-    
+
     return features[required_features]
 
-def get_recommendation(prediction):
-    if prediction > 0.6:
-        return "Buy", prediction
-    elif prediction < 0.4:
-        return "Sell", 1 - prediction
-    else:
-        return "Hold", 0.5
+def get_recommendation(probabilities, classes):
+    """
+    Determines the recommendation based on the highest probability.
+    Returns:
+      - recommendation (str): The class label with the highest probability.
+      - confidence (float): The highest probability.
+      - probs_dict (dict): Dictionary of probabilities for each class.
+    """
+    max_index = np.argmax(probabilities)
+    recommendation = classes[max_index]
+    confidence = probabilities[max_index]
+    probs_dict = dict(zip(classes, probabilities))
+    return recommendation, confidence, probs_dict
 
 # UI Components
 st.title("NASDAQ Stock Analysis & Prediction Platform 📊")
 st.markdown("---")
 
-# Sidebar
+# Sidebar (the image here is for UI reference)
 with st.sidebar:
     st.image("expert_rating_image.jpg", caption="Expert Rating Consensus")
     st.markdown("**Disclaimer:** This is not financial advice. Always do your own research.")
@@ -125,16 +132,19 @@ with col1:
     )
     
     try:
+        # Retrieve stock data and compute indicators
         stock_data = get_stock_data(ticker)
         news_features = get_news_sentiment(ticker)
         processed_data = calculate_technical_indicators(stock_data)
         latest_data = processed_data.iloc[-1]
-        
+
+        # Prepare features and scale them
         features = prepare_features(latest_data, news_features)
         scaled_data = scaler.transform(features)
-        prediction = model.predict(scaled_data)[0]
-        
-        recommendation, confidence = get_recommendation(prediction)
+
+        # Get probability distribution from the model
+        pred_probs = model.predict_proba(scaled_data)[0]
+        recommendation, confidence, probs = get_recommendation(pred_probs, model.classes_)
         
     except Exception as e:
         st.error(f"Error processing data: {str(e)}")
@@ -167,13 +177,17 @@ if 'recommendation' in locals():
         st.progress(confidence)
         st.caption(f"Confidence Level: {confidence*100:.1f}%")
         
+        st.markdown("**Probabilities:**")
+        for label, prob in probs.items():
+            st.write(f"**{label}:** {prob*100:.1f}%")
+        
     with col3_2:
         if recommendation == "Buy":
-            st.success("**Analysis:** Strong positive indicators detected. Consider adding to portfolio.")
+            st.success("**Analysis:** Strong positive indicators detected. Consider adding to your portfolio.")
         elif recommendation == "Sell":
-            st.error("**Analysis:** Negative trends detected. Consider reducing position.")
+            st.error("**Analysis:** Negative trends detected. Consider reducing your position.")
         else:
-            st.warning("**Analysis:** Neutral market signals. Maintain current position.")
+            st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
         
     st.markdown("---")
     st.subheader("Recent News Analysis")
