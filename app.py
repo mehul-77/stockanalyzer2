@@ -1,164 +1,195 @@
+# app.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import matplotlib.pyplot as plt
-import feedparser
-from datetime import datetime, timedelta
-import joblib
 import numpy as np
-import os
+import pickle
+from textblob import TextBlob
+from googlenews import GoogleNews
 from sklearn.preprocessing import StandardScaler
-import ta  # Technical Analysis library
 
-# -----------------------------
-# Streamlit Page Configuration
-# -----------------------------
-st.set_page_config(page_title="Stock Analyzer", layout="wide")
+# Configuration
+st.set_page_config(
+    page_title="NASDAQ Stock Analyzer",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# -----------------------------
-# Load Sentiment Analysis Model (FinBERT)
-# -----------------------------
-@st.cache_resource(show_spinner=False)
-def load_sentiment_model():
-    try:
-        from transformers import pipeline
-        return pipeline("text-classification", model="yiyanghkust/finbert-tone", top_k=None)
-    except Exception as e:
-        st.error(f"Error loading sentiment model: {e}")
-        return None
+# Load models
+@st.cache_resource
+def load_models():
+    with open("random_forest_model.pkl", "rb") as f:
+        model = pickle.load(f)
+    with open("scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
+    return model, scaler
 
-sentiment_pipeline = load_sentiment_model()
+model, scaler = load_models()
 
-# -----------------------------
-# Load Random Forest Model and Scaler
-# -----------------------------
-MODEL_PATH = "random_forest_model.pkl"
-SCALER_PATH = "scaler.pkl"
+# Helper functions
+def get_stock_data(ticker):
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period="1y")
+    return hist
 
-@st.cache_resource(show_spinner=False)
-def load_prediction_model_and_scaler(model_path, scaler_path):
-    try:
-        if os.path.exists(model_path) and os.path.exists(scaler_path):
-            model = joblib.load(model_path)
-            scaler = joblib.load(scaler_path)
-            return model, scaler
-        else:
-            st.error("Model or Scaler file not found.")
-            return None, None
-    except Exception as e:
-        st.error(f"Error loading model/scaler: {e}")
-        return None, None
+def calculate_technical_indicators(df):
+    df['Daily_Return'] = df['Close'].pct_change()
+    df['Moving_Avg'] = df['Close'].rolling(window=14).mean()
+    df['Rolling_Std_Dev'] = df['Close'].rolling(window=14).std()
+    df['RSI'] = compute_rsi(df['Close'])
+    df['EMA'] = df['Close'].ewm(span=14).mean()
+    df['ROC'] = df['Close'].pct_change(periods=14)
+    return df.dropna()
 
-prediction_model, scaler = load_prediction_model_and_scaler(MODEL_PATH, SCALER_PATH)
+def compute_rsi(series, window=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
-# -----------------------------
-# Define Required Features for Prediction
-# -----------------------------
-PREDICTION_FEATURES = ["Close", "High", "Low", "Open", "Volume", "Daily_Return"]
+def get_news_sentiment(ticker):
+    gn = GoogleNews()
+    gn.search(f"{ticker} stock news")
+    results = gn.results()[:10]  # Get top 10 news
+    
+    sentiments = []
+    for result in results:
+        analysis = TextBlob(result['title'])
+        sentiments.append(analysis.sentiment.polarity)
+    
+    return {
+        'Sentiment_Score': np.mean(sentiments) if sentiments else 0,
+        'Headlines_Count': len(results),
+        'Sentiment_Numeric': 1 if np.mean(sentiments) > 0 else -1
+    }
 
-# -----------------------------
-# Feature Engineering Function
-# -----------------------------
-def engineer_features(df):
-    try:
-        df = df.copy()
-        df["Daily_Return"] = df["Close"].pct_change()
-        df["Moving_Avg"] = df["Close"].rolling(window=10).mean()
-        df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
-        df["EMA"] = ta.trend.ema_indicator(df["Close"], window=12)
-        df.fillna(0, inplace=True)
-        return df
-    except Exception as e:
-        st.error(f"Feature engineering failed: {e}")
-        return df
+def prepare_features(stock_data, news_features):
+    features = pd.DataFrame({
+        'Adj Close': stock_data['Close'],
+        'Close': stock_data['Close'],
+        'High': stock_data['High'],
+        'Low': stock_data['Low'],
+        'Open': stock_data['Open'],
+        'Volume': stock_data['Volume'],
+        'Daily_Return': stock_data['Daily_Return'],
+        'Sentiment_Score': news_features['Sentiment_Score'],
+        'Headlines_Count': news_features['Headlines_Count'],
+        'Next_Day_Return': 0,  # Placeholder
+        'Moving_Avg': stock_data['Moving_Avg'],
+        'Rolling_Std_Dev': stock_data['Rolling_Std_Dev'],
+        'RSI': stock_data['RSI'],
+        'EMA': stock_data['EMA'],
+        'ROC': stock_data['ROC'],
+        'Sentiment_Numeric': news_features['Sentiment_Numeric']
+    }, index=[0])
+    
+    required_features = [
+        "Adj Close", "Close", "High", "Low", "Open", "Volume",
+        "Daily_Return", "Sentiment_Score", "Headlines_Count",
+        "Next_Day_Return", "Moving_Avg", "Rolling_Std_Dev",
+        "RSI", "EMA", "ROC", "Sentiment_Numeric"
+    ]
+    
+    for feature in required_features:
+        if feature not in features.columns:
+            features[feature] = 0
+    
+    return features[required_features]
 
-# -----------------------------
-# Fetch Stock Data from Yahoo Finance
-# -----------------------------
-@st.cache_data(show_spinner=False)
-def fetch_stock_data(stock_ticker, start_date, end_date):
-    try:
-        stock_data = yf.download(stock_ticker, start=start_date, end=end_date, interval="1d")
-        if stock_data.empty:
-            return None
-        stock_data = stock_data.reset_index()
-        stock_data["Date"] = stock_data["Date"].astype(str)
-        return stock_data
-    except Exception as e:
-        st.error(f"Error fetching stock data: {e}")
-        return None
-
-# -----------------------------
-# Fetch News Data via Google News RSS Feed
-# -----------------------------
-@st.cache_data(show_spinner=False)
-def fetch_news(stock_ticker):
-    try:
-        rss_url = f"https://news.google.com/rss/search?q={stock_ticker}+stock&hl=en-IN&gl=IN&ceid=IN:en"
-        feed = feedparser.parse(rss_url)
-        return [entry.title for entry in feed.entries[:5]]
-    except Exception as e:
-        st.error(f"Error fetching news: {e}")
-        return []
-
-# -----------------------------
-# Perform Sentiment Analysis on News Articles
-# -----------------------------
-def analyze_sentiment(news_articles):
-    if news_articles and sentiment_pipeline:
-        try:
-            sentiments = sentiment_pipeline(news_articles)
-            scores = []
-            for sentiment in sentiments:
-                label = sentiment[0]["label"].lower()
-                if label == "positive":
-                    score = 1.0
-                elif label == "neutral":
-                    score = 0.5
-                else:
-                    score = 0.0
-                scores.append(score)
-            return np.mean(scores) if scores else 0.5
-        except Exception as e:
-            st.error(f"Sentiment analysis failed: {e}")
-            return 0.5
-    return 0.5
-
-# -----------------------------
-# Generate Buy/Hold/Sell Recommendation
-# -----------------------------
-def get_recommendation(avg_sentiment, predicted_price, current_price):
-    price_change = ((predicted_price - current_price) / current_price) * 100
-    buy_prob = min(max((avg_sentiment * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
-    sell_prob = min(max(((1 - avg_sentiment) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
-    hold_prob = 100 - buy_prob - sell_prob
-    return buy_prob, hold_prob, sell_prob
-
-# -----------------------------
-# Streamlit UI Layout
-# -----------------------------
-st.title("📈 Stock Market Analyzer")
-
-stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upper()
-date = st.date_input("Select Date for Analysis:", datetime.today())
-
-if stock_ticker:
-    st.subheader("📈 Stock Price Trend")
-    stock_data = fetch_stock_data(stock_ticker, (date - timedelta(days=730)).strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
-    if stock_data is not None and not stock_data.empty:
-        stock_data = engineer_features(stock_data)
-        chart_data = stock_data.iloc[-30:] if len(stock_data) >= 30 else stock_data
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(chart_data['Date'], chart_data['Close'], marker='o', linestyle='-')
-        plt.xticks(rotation=45)
-        plt.xlabel("Date")
-        plt.ylabel("Closing Price (USD)")
-        plt.title(f"{stock_ticker} Closing Prices")
-        st.pyplot(fig)
+def get_recommendation(prediction):
+    if prediction > 0.6:
+        return "Buy", prediction
+    elif prediction < 0.4:
+        return "Sell", 1 - prediction
     else:
-        st.error("No stock data available! Check the ticker symbol.")
+        return "Hold", 0.5
 
-    st.subheader("📰 Latest News Headlines")
-    news_articles = fetch_news(stock_ticker)
-    for i, article in enumerate(news_articles):
-        st.write(f"**News {i+1}:** {article}")
+# UI Components
+st.title("NASDAQ Stock Analysis & Prediction Platform 📊")
+st.markdown("---")
+
+# Sidebar
+with st.sidebar:
+    st.image("expert_rating_image.jpg", caption="Expert Rating Consensus")
+    st.markdown("**Disclaimer:** This is not financial advice. Always do your own research.")
+
+# Main content
+col1, col2 = st.columns([1, 3])
+
+with col1:
+    ticker = st.selectbox(
+        "Select NASDAQ Stock",
+        ("AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META"),
+        index=0
+    )
+    
+    try:
+        stock_data = get_stock_data(ticker)
+        news_features = get_news_sentiment(ticker)
+        processed_data = calculate_technical_indicators(stock_data)
+        latest_data = processed_data.iloc[-1]
+        
+        features = prepare_features(latest_data, news_features)
+        scaled_data = scaler.transform(features)
+        prediction = model.predict(scaled_data)[0]
+        
+        recommendation, confidence = get_recommendation(prediction)
+        
+    except Exception as e:
+        st.error(f"Error processing data: {str(e)}")
+
+with col2:
+    st.subheader(f"{ticker} Technical Analysis")
+    st.line_chart(stock_data[['Close', 'Moving_Avg']])
+    
+    col2_1, col2_2, col2_3 = st.columns(3)
+    with col2_1:
+        st.metric("Current Price", f"${latest_data['Close']:.2f}")
+        st.metric("RSI", f"{latest_data['RSI']:.2f}")
+        
+    with col2_2:
+        st.metric("14-Day EMA", f"${latest_data['EMA']:.2f}")
+        st.metric("Daily Volume", f"{latest_data['Volume']:,.0f}")
+        
+    with col2_3:
+        st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
+        st.metric("Recent Headlines", news_features['Headlines_Count'])
+
+st.markdown("---")
+st.subheader("Investment Recommendation")
+
+if 'recommendation' in locals():
+    col3_1, col3_2 = st.columns([1, 2])
+    
+    with col3_1:
+        st.metric("Recommendation", recommendation)
+        st.progress(confidence)
+        st.caption(f"Confidence Level: {confidence*100:.1f}%")
+        
+    with col3_2:
+        if recommendation == "Buy":
+            st.success("**Analysis:** Strong positive indicators detected. Consider adding to portfolio.")
+        elif recommendation == "Sell":
+            st.error("**Analysis:** Negative trends detected. Consider reducing position.")
+        else:
+            st.warning("**Analysis:** Neutral market signals. Maintain current position.")
+        
+    st.markdown("---")
+    st.subheader("Recent News Analysis")
+    
+    gn = GoogleNews()
+    gn.search(f"{ticker} stock news")
+    results = gn.results()[:5]
+    
+    for news in results:
+        with st.expander(news['title']):
+            st.caption(news['media'])
+            st.write(news['desc'])
+            st.caption(news['date'])
+else:
+    st.warning("Select a stock to see analysis")
+
+st.markdown("---")
+st.caption("© 2024 NASDAQ Stock Analyzer. For educational purposes only.")
