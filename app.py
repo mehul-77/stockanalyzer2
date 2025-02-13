@@ -22,10 +22,11 @@ st.set_page_config(page_title="Stock Analyzer", layout="wide")
 def load_sentiment_model():
     try:
         from transformers import pipeline
+        # Using top_k=None instead of return_all_scores for deprecation
         return pipeline(
             "text-classification",
             model="yiyanghkust/finbert-tone",
-            return_all_scores=True
+            top_k=None
         )
     except Exception as e:
         st.error(f"Error loading sentiment model: {e}")
@@ -57,24 +58,10 @@ def load_prediction_model_and_scaler(model_path, scaler_path):
 prediction_model, scaler = load_prediction_model_and_scaler(MODEL_PATH, SCALER_PATH)
 
 # -----------------------------
-# Define Required Features
+# Define Required Features for Prediction
+# (Use only the features that the scaler was trained on)
 # -----------------------------
-REQUIRED_FEATURES = [
-    "Adj Close", "Close", "High", "Low", "Open", "Volume",
-    "Daily_Return", "Sentiment_Score", "Headlines_Count",
-    "Next_Day_Return", "Moving_Avg", "Rolling_Std_Dev",
-    "RSI", "EMA", "ROC", "Sentiment_Numeric"
-]
-
-def ensure_features(df, required_features):
-    # Ensure each required feature exists; if not, add as 0.0
-    for feature in required_features:
-        if feature not in df.columns:
-            df[feature] = 0.0
-    # Reorder columns to match required_features order
-    df = df[required_features]
-    df.fillna(0, inplace=True)
-    return df
+PREDICTION_FEATURES = ["Close", "High", "Low", "Open", "Volume", "Daily_Return"]
 
 # -----------------------------
 # Feature Engineering Function
@@ -91,8 +78,6 @@ def engineer_features(df):
         df['EMA'] = ta.trend.ema_indicator(df['Close'], window=12)
         df['ROC'] = ta.momentum.roc(df['Close'], window=10)
         
-        # For features not computed here, such as Next_Day_Return or Sentiment_Numeric,
-        # we leave them as zeros.
         df.fillna(0, inplace=True)
         return df
     except Exception as e:
@@ -157,43 +142,37 @@ def analyze_sentiment(news_articles):
     if news_articles and sentiment_pipeline:
         try:
             sentiments = sentiment_pipeline(news_articles)
+            # Aggregate sentiment scores without showing individual scores
+            scores = []
             for sentiment in sentiments:
                 # Map FinBERT output to numeric scores: positive=1, neutral=0.5, negative=0
-                if sentiment["label"].lower() == "positive":
-                    sentiment["score"] = 1.0
-                elif sentiment["label"].lower() == "neutral":
-                    sentiment["score"] = 0.5
-                elif sentiment["label"].lower() == "negative":
-                    sentiment["score"] = 0.0
+                label = sentiment[0]['label'].lower()  # sentiment is a list per input
+                if label == "positive":
+                    score = 1.0
+                elif label == "neutral":
+                    score = 0.5
+                elif label == "negative":
+                    score = 0.0
                 else:
-                    sentiment["score"] = 0.5
-            return sentiments
+                    score = 0.5
+                scores.append(score)
+            avg_sentiment = np.mean(scores) if scores else 0.5
+            return avg_sentiment
         except Exception as e:
             st.error(f"Error in sentiment analysis: {e}")
-            return []
-    return []
+            return 0.5
+    return 0.5
 
 # -----------------------------
-# Generate Recommendation based on sentiment and price change
+# Generate Recommendation based on aggregated sentiment and price change
 # -----------------------------
-def get_recommendation(sentiments, predicted_price, current_price):
-    if not sentiments:
-        return 33.3, 33.3, 33.3  # Equal probabilities if no sentiment data
-
-    avg_score = np.mean([s['score'] for s in sentiments])
+def get_recommendation(avg_sentiment, predicted_price, current_price):
     price_change = ((predicted_price - current_price) / current_price) * 100
-
-    buy_prob = min(max((avg_score * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
-    sell_prob = min(max(((1 - avg_score) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
+    buy_prob = min(max((avg_sentiment * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
+    sell_prob = min(max(((1 - avg_sentiment) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
     hold_prob = 100 - buy_prob - sell_prob
-
-    # Normalize probabilities (safety check)
     total = buy_prob + sell_prob + hold_prob
-    return (
-        buy_prob / total * 100,
-        hold_prob / total * 100,
-        sell_prob / total * 100
-    )
+    return (buy_prob / total * 100, hold_prob / total * 100, sell_prob / total * 100)
 
 # -----------------------------
 # Streamlit UI Layout
@@ -205,8 +184,8 @@ date = st.date_input("Select Date for Analysis:", datetime.today())
 
 stock_data = None
 stock_info = None
-news = []
-sentiments = []
+news_articles = []
+avg_sentiment = 0.5
 
 if stock_ticker:
     # Fetch 2 years of data for prediction
@@ -214,14 +193,15 @@ if stock_ticker:
     end_date = date.strftime('%Y-%m-%d')
     stock_data = fetch_stock_data(stock_ticker, start_date, end_date)
     stock_info = fetch_current_stock_info(stock_ticker)
-    news = fetch_news(stock_ticker)
+    news_articles = fetch_news(stock_ticker)
+    # Compute aggregated sentiment score from news
+    avg_sentiment = analyze_sentiment(news_articles)
 
 col1, col2 = st.columns(2)
 
 with col1:
     if stock_data is not None and not stock_data.empty:
         st.subheader("📈 Stock Price Trend")
-        # Use the latest 30 days for the chart (if available)
         chart_data = stock_data.iloc[-30:] if len(stock_data) >= 30 else stock_data
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(chart_data['Date'], chart_data['Close'], marker='o', linestyle='-')
@@ -246,18 +226,10 @@ with col1:
         st.error("❌ No market data found for this stock.")
 
 with col2:
-    st.subheader("📰 Latest News & Sentiment")
-    if news:
-        sentiments = analyze_sentiment(news)
-        for i, article in enumerate(news):
+    st.subheader("📰 Latest News Headlines")
+    if news_articles:
+        for i, article in enumerate(news_articles):
             st.write(f"**News {i+1}:** {article}")
-            if sentiments and i < len(sentiments):
-                label = sentiments[i]['label'].capitalize()
-                score = sentiments[i]['score']
-                st.write(f"**Sentiment:** {label} (Score: {score:.1f})")
-            else:
-                st.write("Sentiment: Not Available")
-            st.write("---")
     else:
         st.write("No news available.")
 
@@ -267,44 +239,28 @@ with col2:
 st.subheader("🚀 Investment Recommendation")
 if prediction_model and scaler and stock_data is not None and len(stock_data) > 0 and stock_info:
     try:
-        # 1. Feature Engineering
+        # 1. Perform feature engineering on stock data
         engineered_data = engineer_features(stock_data.copy())
-        # 2. Ensure all required features exist and reorder them
-        engineered_data = ensure_features(engineered_data, REQUIRED_FEATURES)
-        # 3. Prepare Input Data for Prediction (use the last 30 days or fewer if needed)
-        input_data = engineered_data.tail(min(30, len(engineered_data)))
-        st.write("Input Data Shape:", input_data.shape)  # Debug info
-        st.write("Input Data:", input_data)  # Debug info
-        # 4. Scale the input data
+        # 2. Prepare Input Data for Prediction using only the expected features
+        input_data = engineered_data[PREDICTION_FEATURES].tail(min(30, len(engineered_data)))
+        # 3. Scale the input data
         input_data_scaled = scaler.transform(input_data)
-        # 5. Make Prediction (assuming the model predicts a closing price or sentiment value)
-        prediction = prediction_model.predict(input_data_scaled)[0]
-        # Generate Recommendation using news sentiment and price change
-        buy, hold, sell = get_recommendation(
-            sentiments if news else [],
-            prediction,
-            stock_info['current_price']
-        )
-        # Display Recommendation
+        # 4. Make Prediction (use the last prediction value)
+        prediction = prediction_model.predict(input_data_scaled)[-1]
+        # Generate recommendation using aggregated sentiment and price change
+        buy_prob, hold_prob, sell_prob = get_recommendation(avg_sentiment, prediction, stock_info['current_price'])
+        # Display Expert Rating Image (ensure expert_rating_image.jpg is in the same folder)
+        st.image("expert_rating_image.jpg", use_column_width=True)
+        # Display the probabilities
         col_a, col_b, col_c = st.columns(3)
         with col_a:
-            st.metric("BUY Probability", f"{buy:.1f}%", delta="↑ Recommended" if buy > 50 else "")
+            st.metric("BUY Probability", f"{buy_prob:.1f}%", delta="↑ Recommended" if buy_prob > 50 else "")
         with col_b:
-            st.metric("HOLD Probability", f"{hold:.1f}%", delta="➔ Neutral" if hold > 50 else "")
+            st.metric("HOLD Probability", f"{hold_prob:.1f}%", delta="➔ Neutral" if hold_prob > 50 else "")
         with col_c:
-            st.metric("SELL Probability", f"{sell:.1f}%", delta="↓ Caution" if sell > 50 else "")
+            st.metric("SELL Probability", f"{sell_prob:.1f}%", delta="↓ Caution" if sell_prob > 50 else "")
         st.write(f"**Predicted Closing Price:** ${prediction:.2f}")
     except Exception as e:
         st.error(f"Error during prediction: {e}")
-        st.write("Debug Info:")
-        st.write(f"Model Loaded: {prediction_model is not None}")
-        st.write(f"Scaler Loaded: {scaler is not None}")
-        st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
-        if stock_data is not None:
-            st.write(f"Stock Data Columns: {stock_data.columns.tolist()}")
 else:
     st.warning("⚠️ Not enough data to generate recommendations")
-    st.write("Debug Info:")
-    st.write(f"Model Loaded: {prediction_model is not None}")
-    st.write(f"Scaler Loaded: {scaler is not None}")
-    st.write(f"Stock Data Length: {len(stock_data) if stock_data is not None else 0}")
