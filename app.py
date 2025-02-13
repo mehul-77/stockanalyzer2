@@ -116,10 +116,6 @@ def get_recommendation(probabilities, classes):
 st.title("NASDAQ Stock Analysis & Prediction Platform 📊")
 st.markdown("---")
 
-# Sidebar (the image here is for UI reference)
-with st.sidebar:
-    st.image("expert_rating_image.jpg", caption="Expert Rating Consensus")
-    st.markdown("**Disclaimer:** This is not financial advice. Always do your own research.")
 
 # Main content
 col1, col2 = st.columns([1, 3])
