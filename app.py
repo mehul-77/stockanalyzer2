@@ -61,6 +61,7 @@ PREDICTION_FEATURES = ["Close", "High", "Low", "Open", "Volume", "Daily_Return"]
 # -----------------------------
 def engineer_features(df):
     try:
+        df = df.copy()
         df["Daily_Return"] = df["Close"].pct_change()
         df["Moving_Avg"] = df["Close"].rolling(window=10).mean()
         df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
@@ -70,22 +71,6 @@ def engineer_features(df):
     except Exception as e:
         st.error(f"Feature engineering failed: {e}")
         return df
-
-# -----------------------------
-# Fetch Stock Data from Yahoo Finance
-# -----------------------------
-@st.cache_data(show_spinner=False)
-def fetch_stock_data(stock_ticker, start_date, end_date):
-    try:
-        stock_data = yf.download(stock_ticker, start=start_date, end=end_date, interval="1d")
-        if stock_data.empty:
-            return None
-        stock_data = stock_data.reset_index()
-        stock_data["Date"] = stock_data["Date"].astype(str)
-        return stock_data
-    except Exception as e:
-        st.error(f"Error fetching stock data: {e}")
-        return None
 
 # -----------------------------
 # Fetch News Data via Google News RSS Feed
@@ -124,16 +109,6 @@ def analyze_sentiment(news_articles):
     return 0.5
 
 # -----------------------------
-# Generate Recommendation based on aggregated sentiment and price change
-# -----------------------------
-def get_recommendation(avg_sentiment, predicted_price, current_price):
-    price_change = ((predicted_price - current_price) / current_price) * 100
-    buy_prob = min(max((avg_sentiment * 0.7 + max(price_change, 0) * 0.3) * 100, 0), 100)
-    sell_prob = min(max(((1 - avg_sentiment) * 0.7 + max(-price_change, 0) * 0.3) * 100, 0), 100)
-    hold_prob = 100 - buy_prob - sell_prob
-    return buy_prob, hold_prob, sell_prob
-
-# -----------------------------
 # Streamlit UI Layout
 # -----------------------------
 st.title("📈 Stock Market Analyzer")
@@ -142,32 +117,40 @@ stock_ticker = st.text_input("Enter Stock Ticker (e.g., AAPL, TSLA, MSFT):").upp
 date = st.date_input("Select Date for Analysis:", datetime.today())
 
 if stock_ticker:
+    st.subheader("📈 Stock Price Trend")
+    stock_data = fetch_stock_data(stock_ticker, (date - timedelta(days=730)).strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
+    if stock_data is not None and not stock_data.empty:
+        stock_data = engineer_features(stock_data)
+        chart_data = stock_data.iloc[-30:] if len(stock_data) >= 30 else stock_data
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(chart_data['Date'], chart_data['Close'], marker='o', linestyle='-')
+        plt.xticks(rotation=45)
+        plt.xlabel("Date")
+        plt.ylabel("Closing Price (USD)")
+        plt.title(f"{stock_ticker} Closing Prices")
+        st.pyplot(fig)
+    else:
+        st.error("No stock data available! Check the ticker symbol.")
+
+    st.subheader("📰 Latest News Headlines")
+    news_articles = fetch_news(stock_ticker)
+    for i, article in enumerate(news_articles):
+        st.write(f"**News {i+1}:** {article}")
+    
     st.subheader("🚀 Investment Recommendation")
     try:
-        stock_data = fetch_stock_data(stock_ticker, (date - timedelta(days=730)).strftime('%Y-%m-%d'), date.strftime('%Y-%m-%d'))
-        avg_sentiment = analyze_sentiment(fetch_news(stock_ticker))
-        stock_data = engineer_features(stock_data.copy())
-        
+        avg_sentiment = analyze_sentiment(news_articles)
         input_data = stock_data[PREDICTION_FEATURES].tail(min(30, len(stock_data))).values
         input_data = input_data.reshape(-1, len(PREDICTION_FEATURES))
-        
         input_data_scaled = scaler.transform(input_data)
         prediction = prediction_model.predict(input_data_scaled)[-1]
-        
         buy_prob, hold_prob, sell_prob = get_recommendation(avg_sentiment, prediction, stock_data["Close"].iloc[-1])
-
-        # Styled Output
-        st.markdown("### 🏆 Expert Rating")
         col_a, col_b, col_c = st.columns(3)
         with col_a:
-            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: green;'>BUY</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{buy_prob:.1f}%</div>", unsafe_allow_html=True)
+            st.metric("BUY Probability", f"{buy_prob:.1f}%", delta="↑ Recommended" if buy_prob > 50 else "")
         with col_b:
-            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: orange;'>HOLD</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{hold_prob:.1f}%</div>", unsafe_allow_html=True)
+            st.metric("HOLD Probability", f"{hold_prob:.1f}%", delta="➔ Neutral" if hold_prob > 50 else "")
         with col_c:
-            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: red;'>SELL</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{sell_prob:.1f}%</div>", unsafe_allow_html=True)
-
+            st.metric("SELL Probability", f"{sell_prob:.1f}%", delta="↓ Caution" if sell_prob > 50 else "")
     except Exception as e:
         st.error(f"Error during prediction: {e}")
