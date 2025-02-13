@@ -1,3 +1,4 @@
+# Adjustments for news headlines display and feature name matching
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -115,7 +116,6 @@ def get_recommendation(probabilities, classes):
 # UI Components
 st.title("NASDAQ Stock Analysis & Prediction Platform 📊")
 st.markdown("---")
-
 
 # Main content
 col1, col2 = st.columns([1, 3])
