@@ -18,11 +18,15 @@ st.set_page_config(
 # Load models
 @st.cache_resource
 def load_models():
-    with open("random_forest_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    with open("scaler.pkl", "rb") as f:
-        scaler = pickle.load(f)
-    return model, scaler
+    try:
+        with open("random_forest_model.pkl", "rb") as f:
+            model = pickle.load(f)
+        with open("scaler.pkl", "rb") as f:
+            scaler = pickle.load(f)
+        return model, scaler
+    except Exception as e:
+        st.error(f"Error loading models: {str(e)}")
+        return None, None
 
 model, scaler = load_models()
 
@@ -129,84 +133,88 @@ with col1:
         index=0
     )
     
-    try:
-        # Retrieve stock data and compute indicators
-        stock_data = get_stock_data(ticker)
-        news_features = get_news_sentiment(ticker)
-        processed_data = calculate_technical_indicators(stock_data)
-        latest_data = processed_data.iloc[-1]
+    if model is not None and scaler is not None:
+        try:
+            # Retrieve stock data and compute indicators
+            stock_data = get_stock_data(ticker)
+            news_features = get_news_sentiment(ticker)
+            processed_data = calculate_technical_indicators(stock_data)
+            latest_data = processed_data.iloc[-1]
 
-        # Prepare features and scale them
-        features = prepare_features(processed_data, news_features)
-        scaled_data = scaler.transform(features)
+            # Prepare features and scale them
+            features = prepare_features(processed_data, news_features)
+            scaled_data = scaler.transform(features)
 
-        # Get probability distribution from the model
-        pred_probs = model.predict_proba(scaled_data)[0]
-        recommendation, confidence, probs = get_recommendation(pred_probs, model.classes_)
-        
-    except Exception as e:
-        st.error(f"Error processing data: {str(e)}")
+            # Get probability distribution from the model
+            pred_probs = model.predict_proba(scaled_data)[0]
+            recommendation, confidence, probs = get_recommendation(pred_probs, model.classes_)
+            
+        except Exception as e:
+            st.error(f"Error processing data: {str(e)}")
 
-with col2:
-    st.subheader(f"{ticker} Technical Analysis")
-    st.line_chart(stock_data[['Close', 'Moving_Avg']])
-    
-    col2_1, col2_2, col2_3 = st.columns(3)
-    with col2_1:
-        st.metric("Current Price", f"${latest_data['Close']:.2f}")
-        st.metric("RSI", f"{latest_data['RSI']:.2f}")
-        
-    with col2_2:
-        st.metric("14-Day EMA", f"${latest_data['EMA']:.2f}")
-        st.metric("Daily Volume", f"{latest_data['Volume']:,.0f}")
-        
-    with col2_3:
-        st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
+        with col2:
+            st.subheader(f"{ticker} Technical Analysis")
+            st.line_chart(stock_data[['Close', 'Moving_Avg']])
+            
+            col2_1, col2_2, col2_3 = st.columns(3)
+            with col2_1:
+                st.metric("Current Price", f"${latest_data['Close']:.2f}")
+                st.metric("RSI", f"{latest_data['RSI']:.2f}")
+                
+            with col2_2:
+                st.metric("14-Day EMA", f"${latest_data['EMA']:.2f}")
+                st.metric("Daily Volume", f"{latest_data['Volume']:,.0f}")
+                
+            with col2_3:
+                st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
 
-    st.markdown("---")
-    st.subheader("Recent News Headlines")
-    for headline, sentiment in zip(news_features['Headlines'], news_features['Sentiments']):
-        st.write(f"Headline: {headline}")
-        st.write(f"Sentiment: {'Positive' if sentiment > 0 else 'Negative' if sentiment < 0 else 'Neutral'}")
-        st.write("---")
+            st.markdown("---")
+            st.subheader("Recent News Headlines")
+            for headline, sentiment in zip(news_features['Headlines'], news_features['Sentiments']):
+                st.write(f"Headline: {headline}")
+                st.write(f"Sentiment: {'Positive' if sentiment > 0 else 'Negative' if sentiment < 0 else 'Neutral'}")
+                st.write("---")
 
-st.markdown("---")
-st.subheader("Investment Recommendation")
+        st.markdown("---")
+        st.subheader("Investment Recommendation")
 
-if 'recommendation' in locals():
-    col3_1, col3_2 = st.columns([1, 2])
-    
-    with col3_1:
-        st.metric("Recommendation", recommendation)
-        st.progress(confidence)
-        st.caption(f"Confidence Level: {confidence*100:.1f}%")
-        
-        st.markdown("**Probabilities:**")
-        for label, prob in probs.items():
-            st.write(f"**{label}:** {prob*100:.1f}%")
-        
-    with col3_2:
-        if recommendation == "Buy":
-            st.success("**Analysis:** Strong positive indicators detected. Consider adding to your portfolio.")
-        elif recommendation == "Sell":
-            st.error("**Analysis:** Negative trends detected. Consider reducing your position.")
+        if 'recommendation' in locals():
+            col3_1, col3_2 = st.columns([1, 2])
+            
+            with col3_1:
+                st.metric("Recommendation", recommendation)
+                st.progress(confidence)
+                st.caption(f"Confidence Level: {confidence*100:.1f}%")
+                
+                st.markdown("**Probabilities:**")
+                for label, prob in probs.items():
+                    st.write(f"**{label}:** {prob*100:.1f}%")
+                
+            with col3_2:
+                if recommendation == "Buy":
+                    st.success("**Analysis:** Strong positive indicators detected. Consider adding to your portfolio.")
+                elif recommendation == "Sell":
+                    st.error("**Analysis:** Negative trends detected. Consider reducing your position.")
+                else:
+                    st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
+                
+            st.markdown("---")
+            st.subheader("Recent News Analysis")
+            
+            gn = GoogleNews()
+            gn.search(f"{ticker} stock news")
+            results = gn.results()[:5]
+            
+            for news in results:
+                with st.expander(news['title']):
+                    st.caption(news['media'])
+                    st.write(news['desc'])
+                    st.caption(news['date'])
         else:
-            st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
-        
-    st.markdown("---")
-    st.subheader("Recent News Analysis")
-    
-    gn = GoogleNews()
-    gn.search(f"{ticker} stock news")
-    results = gn.results()[:5]
-    
-    for news in results:
-        with st.expander(news['title']):
-            st.caption(news['media'])
-            st.write(news['desc'])
-            st.caption(news['date'])
-else:
-    st.warning("Select a stock to see analysis")
+            st.warning("Select a stock to see analysis")
+
+    else:
+        st.warning("Models are not loaded. Please check the model loading section.")
 
 st.markdown("---")
 st.caption("© 2024 NASDAQ Stock Analyzer. For educational purposes only.")
