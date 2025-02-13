@@ -9,3 +9,4 @@ scikit-learn
 ta
 transformers
 torch
+textblob
