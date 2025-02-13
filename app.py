@@ -1,4 +1,3 @@
-# Adjustments for news headlines display and feature name matching
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -55,14 +54,16 @@ def get_news_sentiment(ticker):
     results = gn.results()[:10]  # Get top 10 news
 
     sentiments = []
+    headlines = []
     for result in results:
         analysis = TextBlob(result['title'])
         sentiments.append(analysis.sentiment.polarity)
+        headlines.append(result['title'])
 
     return {
         'Sentiment_Score': np.mean(sentiments) if sentiments else 0,
-        'Headlines_Count': len(results),
-        'Sentiment_Numeric': 1 if np.mean(sentiments) > 0 else -1
+        'Headlines': headlines,
+        'Sentiments': sentiments
     }
 
 def prepare_features(stock_data, news_features):
@@ -76,21 +77,18 @@ def prepare_features(stock_data, news_features):
         'Volume': [stock_data['Volume']],
         'Daily_Return': [stock_data['Daily_Return']],
         'Sentiment_Score': [news_features['Sentiment_Score']],
-        'Headlines_Count': [news_features['Headlines_Count']],
         'Next_Day_Return': [0],  # Placeholder
         'Moving_Avg': [stock_data['Moving_Avg']],
         'Rolling_Std_Dev': [stock_data['Rolling_Std_Dev']],
         'RSI': [stock_data['RSI']],
         'EMA': [stock_data['EMA']],
         'ROC': [stock_data['ROC']],
-        'Sentiment_Numeric': [news_features['Sentiment_Numeric']]
     })
 
     required_features = [
         "Adj Close", "Close", "High", "Low", "Open", "Volume",
-        "Daily_Return", "Sentiment_Score", "Headlines_Count",
-        "Next_Day_Return", "Moving_Avg", "Rolling_Std_Dev",
-        "RSI", "EMA", "ROC", "Sentiment_Numeric"
+        "Daily_Return", "Sentiment_Score", "Next_Day_Return",
+        "Moving_Avg", "Rolling_Std_Dev", "RSI", "EMA", "ROC"
     ]
     
     for feature in required_features:
@@ -160,7 +158,13 @@ with col2:
         
     with col2_3:
         st.metric("News Sentiment", f"{news_features['Sentiment_Score']:.2f}")
-        st.metric("Recent Headlines", news_features['Headlines_Count'])
+
+    st.markdown("---")
+    st.subheader("Recent News Headlines")
+    for headline, sentiment in zip(news_features['Headlines'], news_features['Sentiments']):
+        st.write(f"Headline: {headline}")
+        st.write(f"Sentiment: {'Positive' if sentiment > 0 else 'Negative' if sentiment < 0 else 'Neutral'}")
+        st.write("---")
 
 st.markdown("---")
 st.subheader("Investment Recommendation")
