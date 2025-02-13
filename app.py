@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+import yfinance as yf
 from textblob import TextBlob
 from GoogleNews import GoogleNews
 from sklearn.preprocessing import StandardScaler
-import requests
 
 # Configuration
 st.set_page_config(
@@ -32,19 +32,12 @@ model, scaler = load_models()
 
 # Helper functions
 def get_stock_data(ticker):
-    API_KEY = "LTC1HNLYBEEHB4S2"
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={ticker}&apikey={API_KEY}&outputsize=compact"
-    response = requests.get(url)
-    data = response.json()
-    
-    if "Time Series (Daily)" in data:
-        df = pd.DataFrame.from_dict(data["Time Series (Daily)"], orient="index", dtype=float)
-        df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Dividend Amount", "Split Coefficient"]
-        df = df.sort_index()
-        return df
-    else:
-        st.error(f"Error fetching data from Alpha Vantage: {data.get('Note', 'No data available')}")
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period="1y")
+    if hist.empty:
+        st.error("Error fetching data from Yahoo Finance: No data available")
         return pd.DataFrame()
+    return hist
 
 def compute_rsi(series, window=14):
     delta = series.diff()
@@ -89,7 +82,7 @@ def prepare_features(stock_data, news_features):
     
     # Build a DataFrame from the latest stock row and the news sentiment data.
     features = pd.DataFrame({
-        'Adj Close': [stock_data['Adj Close'].iloc[-1]],
+        'Adj Close': [stock_data['Close'].iloc[-1]],
         'Close': [stock_data['Close'].iloc[-1]],
         'High': [stock_data['High'].iloc[-1]],
         'Low': [stock_data['Low'].iloc[-1]],
