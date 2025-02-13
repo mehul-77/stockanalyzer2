@@ -213,8 +213,11 @@ if 'recommendation' in locals():
         elif recommendation == "Sell":
             st.error("**Analysis:** Negative trends detected. Consider reducing your position.")
         else:
-            st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
-        
+            if recommendation == "Neutral":
+                st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
+            elif recommendation == "Hold":
+                st.info("**Analysis:** Hold your current position.")
+
     st.markdown("---")
     st.subheader("Recent News Analysis")
     
