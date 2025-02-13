@@ -34,8 +34,8 @@ model, scaler = load_models()
 def get_stock_data(ticker):
     stock = yf.Ticker(ticker)
     hist = stock.history(period="1y")
-    if hist.empty:
-        st.error("Error fetching data from Yahoo Finance: No data available")
+    if hist.empty or 'Close' not in hist.columns:
+        st.error("Error fetching data from Yahoo Finance: No data available or missing 'Close' column")
         return pd.DataFrame()
     return hist
 
