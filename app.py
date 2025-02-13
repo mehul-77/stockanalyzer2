@@ -127,6 +127,13 @@ def get_recommendation(probabilities, classes):
     recommendation = classes[max_index]
     confidence = probabilities[max_index]
     probs_dict = dict(zip(classes, probabilities))
+    
+    # Convert numerical recommendation to words
+    if recommendation == 1:
+        recommendation = "Buy"
+    elif recommendation == 0:
+        recommendation = "Sell"
+
     return recommendation, confidence, probs_dict
 
 # UI Components
@@ -212,11 +219,6 @@ if 'recommendation' in locals():
             st.success("**Analysis:** Strong positive indicators detected. Consider adding to your portfolio.")
         elif recommendation == "Sell":
             st.error("**Analysis:** Negative trends detected. Consider reducing your position.")
-        else:
-            if recommendation == "Neutral":
-                st.warning("**Analysis:** Neutral market signals. Maintain your current position.")
-            elif recommendation == "Hold":
-                st.info("**Analysis:** Hold your current position.")
 
     st.markdown("---")
     st.subheader("Recent News Analysis")
