@@ -63,7 +63,8 @@ def get_news_sentiment(ticker):
     return {
         'Sentiment_Score': np.mean(sentiments) if sentiments else 0,
         'Headlines': headlines,
-        'Sentiments': sentiments
+        'Sentiments': sentiments,
+        'Sentiment_Numeric': 1 if np.mean(sentiments) > 0 else -1
     }
 
 def prepare_features(stock_data, news_features):
@@ -83,12 +84,13 @@ def prepare_features(stock_data, news_features):
         'RSI': [stock_data['RSI']],
         'EMA': [stock_data['EMA']],
         'ROC': [stock_data['ROC']],
+        'Sentiment_Numeric': [news_features['Sentiment_Numeric']]
     })
 
     required_features = [
         "Adj Close", "Close", "High", "Low", "Open", "Volume",
         "Daily_Return", "Sentiment_Score", "Next_Day_Return",
-        "Moving_Avg", "Rolling_Std_Dev", "RSI", "EMA", "ROC"
+        "Moving_Avg", "Rolling_Std_Dev", "RSI", "EMA", "ROC", "Sentiment_Numeric"
     ]
     
     for feature in required_features:
