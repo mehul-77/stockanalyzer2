@@ -1,11 +1,10 @@
-# app.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import pickle
 from textblob import TextBlob
-from googlenews import GoogleNews
+from GoogleNews import GoogleNews
 from sklearn.preprocessing import StandardScaler
 
 # Configuration
