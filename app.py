@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 
 # Configuration
 st.set_page_config(
-    page_title="NASDAQ Stock Analyzer",
+    page_title="US Stock Analyzer",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -130,18 +130,14 @@ def get_recommendation(probabilities, classes):
     return recommendation, confidence, probs_dict
 
 # UI Components
-st.title("NASDAQ Stock Analysis & Prediction Platform 📊")
+st.title("US Stock Analysis & Prediction Platform 📊")
 st.markdown("---")
 
 # Main content
 col1, col2 = st.columns([1, 3])
 
 with col1:
-    ticker = st.selectbox(
-        "Select NASDAQ Stock",
-        ("AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META"),
-        index=0
-    )
+    ticker = st.text_input("Enter US Stock Ticker", value="AAPL")
     
     if model is not None and scaler is not None:
         try:
@@ -232,7 +228,7 @@ if 'recommendation' in locals():
             st.write(news['desc'])
             st.caption(news['date'])
 else:
-    st.warning("Select a stock to see analysis")
+    st.warning("Enter a valid stock ticker to see analysis")
 
 st.markdown("---")
-st.caption("© 2024 NASDAQ Stock Analyzer. For educational purposes only.")
+st.caption("© 2025 US Stock Analyzer. For educational purposes only.")
