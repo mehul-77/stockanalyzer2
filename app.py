@@ -73,6 +73,22 @@ def engineer_features(df):
         return df
 
 # -----------------------------
+# Fetch Stock Data from Yahoo Finance
+# -----------------------------
+@st.cache_data(show_spinner=False)
+def fetch_stock_data(stock_ticker, start_date, end_date):
+    try:
+        stock_data = yf.download(stock_ticker, start=start_date, end=end_date, interval="1d")
+        if stock_data.empty:
+            return None
+        stock_data = stock_data.reset_index()
+        stock_data["Date"] = stock_data["Date"].astype(str)
+        return stock_data
+    except Exception as e:
+        st.error(f"Error fetching stock data: {e}")
+        return None
+
+# -----------------------------
 # Fetch News Data via Google News RSS Feed
 # -----------------------------
 @st.cache_data(show_spinner=False)
@@ -141,16 +157,26 @@ if stock_ticker:
     try:
         avg_sentiment = analyze_sentiment(news_articles)
         input_data = stock_data[PREDICTION_FEATURES].tail(min(30, len(stock_data))).values
+
+        # Ensure proper reshaping for scaler
         input_data = input_data.reshape(-1, len(PREDICTION_FEATURES))
+
         input_data_scaled = scaler.transform(input_data)
         prediction = prediction_model.predict(input_data_scaled)[-1]
         buy_prob, hold_prob, sell_prob = get_recommendation(avg_sentiment, prediction, stock_data["Close"].iloc[-1])
+
+        # Styled Output for Recommendations
+        st.markdown("### 🏆 Expert Recommendation")
         col_a, col_b, col_c = st.columns(3)
         with col_a:
-            st.metric("BUY Probability", f"{buy_prob:.1f}%", delta="↑ Recommended" if buy_prob > 50 else "")
+            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: green;'>BUY</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{buy_prob:.1f}%</div>", unsafe_allow_html=True)
         with col_b:
-            st.metric("HOLD Probability", f"{hold_prob:.1f}%", delta="➔ Neutral" if hold_prob > 50 else "")
+            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: orange;'>HOLD</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{hold_prob:.1f}%</div>", unsafe_allow_html=True)
         with col_c:
-            st.metric("SELL Probability", f"{sell_prob:.1f}%", delta="↓ Caution" if sell_prob > 50 else "")
+            st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold; color: red;'>SELL</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 24px;'>{sell_prob:.1f}%</div>", unsafe_allow_html=True)
+
     except Exception as e:
         st.error(f"Error during prediction: {e}")
