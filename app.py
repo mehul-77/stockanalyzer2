@@ -139,7 +139,7 @@ def get_recommendation(probabilities, classes):
     return recommendation, confidence, probs_dict
 
 # UI Components
-st.title("SentiStock: AI-Powered US Stock Analysis & Prediction Platform 📊")
+st.title("SentiStock: AI-Powered US Stock Insights 📊")
 st.markdown("---")
 
 # Main content
