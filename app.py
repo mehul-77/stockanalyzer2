@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 
 # Configuration
 st.set_page_config(
-    page_title="SentiStock: US Stock Analysing and Prediction",
+    page_title="SentiStock:AI-Powered US Stock Analysing and Prediction",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
