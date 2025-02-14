@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 
 # Configuration
 st.set_page_config(
-    page_title="US Stock Analyzer",
+    page_title="SentiStock: US Stock Analysing and Prediction",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -236,4 +236,5 @@ else:
     st.warning("Enter a valid stock ticker to see analysis")
 
 st.markdown("---")
-st.caption("© 2025 US Stock Analyzer. For educational purposes only.")
+st.caption("© 2025 US Stock Analyzer. For educational purposes only.
+Disclaimer: This is subject to risk read all market regulations and rules clearly before investing.No legal binding shall be attached to us.")
