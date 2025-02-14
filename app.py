@@ -239,4 +239,4 @@ else:
 
 st.markdown("---")
 st.caption("© 2025 US Stock Analyzer. For educational purposes only.")
-st.caption("Disclaimer: This is subject to risk read all market regulations and rules clearly before investing.No legal binding shall be attached to us.")
+st.caption("Disclaimer: This is subject to risk read all market regulations and rules clearly before investing. No legal binding shall be attached to us.")
