@@ -43,6 +43,6 @@ It utilizes **Natural Language Processing (NLP), machine learning models, and fi
 ---
 
 📌 **Feel free to contribute, report issues, or suggest improvements!**  
-📧 Contact: arjunharidasmaster123@gmail.com, danybinuluke2005@gmail.com, mehulmadhu04@gmail.com 
+📧 Contact: arjunharidasmaster123@gmail.com, danybinu2005@gmail.com, mehulmadhu04@gmail.com 
 
 ---
