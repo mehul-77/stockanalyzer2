@@ -1,4 +1,7 @@
-Stock Sentiment Analysis & Prediction
+SentiStock AI: Stock Sentiment Analysis & Prediction
+
+https://sentistockai.streamlit.app/
+
 A Machine Learning Approach to Financial Market Predictions
 Overview
 This project analyzes financial news sentiment and its impact on stock market movements. It utilizes Natural Language Processing (NLP), machine learning models, and financial data analysis to predict stock price trends based on sentiment extracted from news articles.
