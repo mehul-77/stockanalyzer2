@@ -2,7 +2,7 @@ name: Keep Streamlit App Alive
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 */12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,5 +11,8 @@ jobs:
     steps:
       - name: Ping Streamlit App
         run: |
-          curl -s -w "\nHTTP Status: %{http_code}\n" https://sentistockai.streamlit.app/ > /dev/null
-          echo "Streamlit app pinged successfully at $(date)"
+          curl -I --max-time 30 \
+            -H "User-Agent: GitHub-Actions-Keep-Alive" \
+            https://sentistockai.streamlit.app/ || true
+          echo "Keep-alive ping completed at $(date)"
+        continue-on-error: true
