@@ -272,3 +272,5 @@ for h,s in zip(news["Headlines"], news["Sentiments"]):
 st.markdown("---")
 
 st.caption("© 2025 SentiStock AI")
+st.caption("Disclaimer: This is subject to risk read all market regulations and rules clearly before investing. No legal binding shall be attached to us.")
+
