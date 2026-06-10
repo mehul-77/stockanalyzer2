@@ -1,6 +1,6 @@
 # SentiStock AI: Stock Sentiment Analysis & Prediction  
 
-🔗 **Live Demo:** [SentiStock AI](https://sentistockai.streamlit.app/)  
+🔗 **Live Application:** [SentiStock AI Production Server](https://huggingface.co/spaces/Mehul004/SentiStock-AI)
 
 ## A Machine Learning Approach to Financial Market Predictions  
 
@@ -36,8 +36,8 @@ It utilizes **Natural Language Processing (NLP), machine learning models, and fi
 ---
 
 ## 👨‍💻 Contributors  
-- **Arjun Haridas** – Model Training and Data Engineering  
-- **Mehulkrishna** – Front-End Streamlit Dashboard  
+- **Arjun Haridas** – Model Training and Data Engineering
+- **Mehulkrishna** – UI Dashboard, Backend API Engineering, & Cloud Deployment
 - **Dany Binu Luke** – Prediction Code  
 
 ---
