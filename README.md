@@ -1,6 +1,6 @@
 # SentiStock AI: Stock Sentiment Analysis & Prediction  
 
-🔗 **Live Application:** [SentiStock AI Production Server](https://huggingface.co/spaces/Mehul004/SentiStock-AI)
+🔗 **Live Application:** [SentiStock AI Production Server](https://mehul004-sentistock-ai.hf.space)
 
 ## A Machine Learning Approach to Financial Market Predictions  
 
